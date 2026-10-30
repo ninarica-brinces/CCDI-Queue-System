@@ -12,6 +12,16 @@ function createSafeElement(tag, className, textContent = '') {
   return el;
 }
 
+function formatPaymentDetails(ticket) {
+  const details = [
+    ticket.payment,
+    ticket.paymentPeriod,
+    ticket.paymentPercentage,
+    ticket.discount && ticket.discount !== 'None' ? `Discount: ${ticket.discount}` : ''
+  ];
+  return details.filter(Boolean).join(' / ');
+}
+
 function populateFormOptions() {
   elements.laneTypeSelect.innerHTML = '';
   APP_CONFIG.lanes.forEach(lane => {
@@ -32,6 +42,13 @@ function populateFormOptions() {
     const opt = createSafeElement('option', '', pmt.label);
     opt.value = pmt.label;
     elements.paymentTypeSelect.appendChild(opt);
+  });
+
+  elements.paymentPeriodSelect.innerHTML = '';
+  APP_CONFIG.paymentPeriods.forEach(period => {
+    const opt = createSafeElement('option', '', period.label);
+    opt.value = period.id;
+    elements.paymentPeriodSelect.appendChild(opt);
   });
 }
 
@@ -96,7 +113,7 @@ function renderServingPanel(numElem, detailsElem, currentItem) {
   const fields = [
     { label: 'Student Name:', val: currentItem.studentName },
     { label: 'Service:', val: currentItem.service },
-    { label: 'Payment:', val: currentItem.payment },
+    { label: 'Payment:', val: formatPaymentDetails(currentItem) },
     { label: 'Time Issued:', val: currentItem.time }
   ];
 
@@ -141,7 +158,7 @@ function renderTable(tbody, queue, emptyText) {
     tr.appendChild(tdId);
     tr.appendChild(createSafeElement('td', '', item.studentName));
     tr.appendChild(createSafeElement('td', '', item.service));
-    tr.appendChild(createSafeElement('td', '', item.payment));
+    tr.appendChild(createSafeElement('td', '', formatPaymentDetails(item)));
     tr.appendChild(createSafeElement('td', '', item.time));
 
     const tdStatus = createSafeElement('td');
@@ -182,7 +199,7 @@ function renderTransactionsPage(state) {
     tr.appendChild(createSafeElement('td', '', tx.studentName));
     tr.appendChild(createSafeElement('td', '', tx.lane));
     tr.appendChild(createSafeElement('td', '', tx.service));
-    tr.appendChild(createSafeElement('td', '', tx.payment));
+    tr.appendChild(createSafeElement('td', '', formatPaymentDetails(tx)));
     tr.appendChild(createSafeElement('td', '', tx.time));
     tr.appendChild(createSafeElement('td', '', tx.endTime));
 
@@ -247,6 +264,9 @@ function setupAutocomplete() {
     elements.studentSearchResults,
     student => {
       elements.studentDatabaseId.value = student.student_id;
+      elements.studentCourse.value = student.course || '';
+      elements.studentAddress.value = student.address || '';
+      elements.studentYearLevel.value = student.year_level || '';
       elements.studentNameInput.value = student.full_name;
       elements.studentDetails.textContent =
         `${student.course}, Year ${student.year_level} | ${student.address}`;
@@ -255,6 +275,9 @@ function setupAutocomplete() {
 
   elements.studentNameInput.addEventListener('input', () => {
     elements.studentDatabaseId.value = '';
+    elements.studentCourse.value = '';
+    elements.studentAddress.value = '';
+    elements.studentYearLevel.value = '';
     elements.studentDetails.textContent = '';
     elements.studentLookup.value = '';
   });
@@ -299,8 +322,12 @@ function bindEvents() {
       lane: elements.laneTypeSelect.value,
       studentId: elements.studentDatabaseId.value,
       studentName: studentName,
+      course: elements.studentCourse.value,
+      address: elements.studentAddress.value,
+      yearLevel: elements.studentYearLevel.value,
       service: elements.serviceTypeSelect.value,
       payment: elements.paymentTypeSelect.value,
+      paymentPeriod: elements.paymentPeriodSelect.value,
       discount: customDiscount
     });
 
@@ -366,11 +393,15 @@ function init() {
     laneTypeSelect: document.getElementById('laneType'),
     serviceTypeSelect: document.getElementById('serviceType'),
     paymentTypeSelect: document.getElementById('paymentType'),
+    paymentPeriodSelect: document.getElementById('paymentPeriod'),
 
     studentNameInput: document.getElementById('studentName'),
     studentLookup: document.getElementById('studentLookup'),
     studentSearchResults: document.getElementById('studentSearchResults'),
     studentDatabaseId: document.getElementById('studentDatabaseId'),
+    studentCourse: document.getElementById('studentCourse'),
+    studentAddress: document.getElementById('studentAddress'),
+    studentYearLevel: document.getElementById('studentYearLevel'),
     studentDetails: document.getElementById('studentDetails'),
     customDiscountInput: document.getElementById('customDiscount'),
 

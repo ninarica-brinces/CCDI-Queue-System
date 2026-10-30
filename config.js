@@ -17,5 +17,12 @@ export const APP_CONFIG = {
     { id: 'partial_25', label: 'Partial Payment (25%)' },
     { id: 'promissory', label: 'Promissory Note' },
     { id: 'none', label: 'N/A (Document Only)' }
+  ],
+  paymentPeriods: [
+    { id: '', label: 'N/A' },
+    { id: 'Prelim', label: 'Prelim' },
+    { id: 'Midterm', label: 'Midterm' },
+    { id: 'Pre-Final', label: 'Pre-Final' },
+    { id: 'Final', label: 'Final' }
   ]
 };

@@ -4,8 +4,15 @@ CREATE TABLE IF NOT EXISTS public.queue_tickets (
     lane text NOT NULL,
     student_name text NOT NULL,
     student_id text,
+    course text,
+    address text,
+    year_level text,
     transaction_type text NOT NULL,
     payment_method text NOT NULL,
+    payment_period text,
+    payment_percentage text,
+    discount text,
+    notes text,
     status text NOT NULL DEFAULT 'waiting',
     service_date date NOT NULL DEFAULT CURRENT_DATE,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -13,7 +20,23 @@ CREATE TABLE IF NOT EXISTS public.queue_tickets (
 );
 
 ALTER TABLE public.queue_tickets
-    ADD COLUMN IF NOT EXISTS student_id text;
+    ADD COLUMN IF NOT EXISTS ticket_number text,
+    ADD COLUMN IF NOT EXISTS lane text,
+    ADD COLUMN IF NOT EXISTS student_name text,
+    ADD COLUMN IF NOT EXISTS student_id text,
+    ADD COLUMN IF NOT EXISTS course text,
+    ADD COLUMN IF NOT EXISTS address text,
+    ADD COLUMN IF NOT EXISTS year_level text,
+    ADD COLUMN IF NOT EXISTS transaction_type text,
+    ADD COLUMN IF NOT EXISTS payment_method text,
+    ADD COLUMN IF NOT EXISTS payment_period text,
+    ADD COLUMN IF NOT EXISTS payment_percentage text,
+    ADD COLUMN IF NOT EXISTS discount text,
+    ADD COLUMN IF NOT EXISTS notes text,
+    ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'waiting',
+    ADD COLUMN IF NOT EXISTS service_date date NOT NULL DEFAULT CURRENT_DATE,
+    ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 
 CREATE INDEX IF NOT EXISTS queue_tickets_service_lane_status_order_idx
     ON public.queue_tickets (service_date, lane, status, created_at, ticket_id);

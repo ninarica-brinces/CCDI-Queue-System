@@ -51,19 +51,28 @@ export class QueueManager {
     const remoteState = structuredClone(EMPTY_STATE);
 
     tickets.forEach(ticket => {
+      const ticketNumber = String(ticket.ticket_number || `Ticket-${ticket.ticket_id}`);
       const mapped = {
-        id: ticket.ticket_number,
+        id: ticketNumber,
         dbId: ticket.ticket_id,
         lane: ticket.lane,
-        studentName: ticket.student_name,
-        service: ticket.transaction_type,
-        payment: ticket.payment_method,
+        studentName: ticket.student_name || '',
+        studentId: ticket.student_id || '',
+        course: ticket.course || '',
+        address: ticket.address || '',
+        yearLevel: ticket.year_level || '',
+        service: ticket.transaction_type || '',
+        payment: ticket.payment_method || '',
+        paymentPeriod: ticket.payment_period || '',
+        paymentPercentage: ticket.payment_percentage || '',
+        discount: ticket.discount || '',
+        notes: ticket.notes || '',
         status: ticket.status,
         time: ticket.created_at,
         endTime: ticket.completed_at || '--'
       };
 
-      const sequence = Number(ticket.ticket_number.split('-')[1]) || 0;
+      const sequence = Number(ticketNumber.split('-')[1]) || 0;
       if (ticket.lane === 'Priority') {
         remoteState.counters.prioSequence = Math.max(remoteState.counters.prioSequence, sequence);
       } else {
@@ -109,7 +118,18 @@ export class QueueManager {
     listener('Connecting to PostgreSQL');
   }
 
-  async createTicket({ lane, studentId, studentName, service, payment, discount }) {
+  async createTicket({
+    lane,
+    studentId,
+    studentName,
+    course,
+    address,
+    yearLevel,
+    service,
+    payment,
+    paymentPeriod,
+    discount
+  }) {
     try {
       const response = await fetch(APP_CONFIG.apiUrl, {
         method: 'POST',
@@ -119,8 +139,12 @@ export class QueueManager {
           lane,
           studentId,
           studentName,
+          course,
+          address,
+          yearLevel,
           service,
           payment,
+          paymentPeriod,
           discount
         })
       });

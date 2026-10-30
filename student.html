@@ -1649,13 +1649,20 @@
 
     function mapPortalTicket(ticket) {
       return {
-        number: ticket.ticket_number,
+        number: ticket.ticket_number || `Ticket-${ticket.ticket_id}`,
         studentId: ticket.student_id || '',
-        name: ticket.student_name,
-        service: ticket.transaction_type,
+        course: ticket.course || '',
+        address: ticket.address || '',
+        yearLevel: ticket.year_level || '',
+        name: ticket.student_name || '',
+        service: ticket.transaction_type || '',
         priority: ticket.lane,
         detail: ticket.lane,
-        payment: ticket.payment_method,
+        payment: ticket.payment_method || '',
+        paymentPeriod: ticket.payment_period || '',
+        paymentPercentage: ticket.payment_percentage || '',
+        discount: ticket.discount || '',
+        notes: ticket.notes || '',
         status: ticket.status,
         time: ticket.created_at
       };
@@ -2286,8 +2293,14 @@
             lane: lane.includes('PWD') ? 'Priority' : 'Regular',
             studentId: studId,
             studentName: studName,
+            course: studCourse,
+            address: studAddress,
+            yearLevel: studYear,
             service: currentService,
-            payment: `${payTypeInput.value} / ${periodInput.value} / ${payPercentage}%${lane === 'Parent/Guardian' ? ` / Parent: ${relation}` : ''}`
+            payment: payTypeInput.value,
+            paymentPeriod: periodInput.value,
+            paymentPercentage: `${payPercentage}%`,
+            notes: lane === 'Parent/Guardian' ? `Relation: ${relation}` : ''
           })
         });
         const result = await response.json();

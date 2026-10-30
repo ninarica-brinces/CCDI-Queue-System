@@ -8,7 +8,7 @@ header('Access-Control-Allow-Headers: Content-Type');
 function respond($status, $payload)
 {
     http_response_code($status);
-    echo json_encode($payload);
+    echo json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
     exit();
 }
 
@@ -27,8 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 $timezone = getenv('APP_TIMEZONE');
+$requestId = 'unassigned';
 
 try {
+    $requestId = bin2hex(random_bytes(8));
     date_default_timezone_set($timezone !== false && $timezone !== '' ? $timezone : 'Asia/Manila');
     require_once __DIR__ . '/db.php';
 
@@ -89,9 +91,15 @@ try {
         $lane = requestString($input, 'lane');
         $studentName = requestString($input, 'studentName');
         $studentId = requestString($input, 'studentId');
+        $course = requestString($input, 'course');
+        $address = requestString($input, 'address');
+        $yearLevel = requestString($input, 'yearLevel');
         $service = requestString($input, 'service');
         $payment = requestString($input, 'payment');
+        $paymentPeriod = requestString($input, 'paymentPeriod');
+        $paymentPercentage = requestString($input, 'paymentPercentage');
         $discount = requestString($input, 'discount');
+        $notes = requestString($input, 'notes');
 
         if (!in_array($lane, ['Regular', 'Priority'], true)) {
             respond(400, ['success' => false, 'message' => 'Lane must be Regular or Priority']);
@@ -99,15 +107,20 @@ try {
         if ($studentName === '' || $service === '' || $payment === '') {
             respond(400, ['success' => false, 'message' => 'Student name, service, and payment are required']);
         }
-        if (strlen($studentName) > 120 || strlen($studentId) > 64 || strlen($service) > 120 || strlen($payment) > 240 || strlen($discount) > 120) {
+        if (
+            strlen($studentName) > 120 ||
+            strlen($studentId) > 64 ||
+            strlen($course) > 120 ||
+            strlen($address) > 500 ||
+            strlen($yearLevel) > 32 ||
+            strlen($service) > 120 ||
+            strlen($payment) > 240 ||
+            strlen($paymentPeriod) > 64 ||
+            strlen($paymentPercentage) > 32 ||
+            strlen($discount) > 120 ||
+            strlen($notes) > 240
+        ) {
             respond(400, ['success' => false, 'message' => 'One or more ticket fields exceed the allowed length']);
-        }
-
-        $paymentWithDiscount = $discount !== '' && $discount !== 'None'
-            ? $payment . ' (Discount: ' . $discount . ')'
-            : $payment;
-        if (strlen($paymentWithDiscount) > 240) {
-            respond(400, ['success' => false, 'message' => 'Payment details exceed the allowed length']);
         }
 
         $conn->beginTransaction();
@@ -138,8 +151,9 @@ try {
 
         $insert = $conn->prepare(
             "INSERT INTO queue_tickets
-                (ticket_number, lane, student_name, student_id, transaction_type, payment_method, status, service_date)
-             VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?)
+                (ticket_number, lane, student_name, student_id, course, address, year_level,
+                 transaction_type, payment_method, payment_period, payment_percentage, discount, notes, status, service_date)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?)
              RETURNING ticket_id"
         );
         $insert->bindValue(1, $ticketNumber);
@@ -150,9 +164,16 @@ try {
             $studentId !== '' ? $studentId : null,
             $studentId !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL
         );
-        $insert->bindValue(5, $service);
-        $insert->bindValue(6, $paymentWithDiscount);
-        $insert->bindValue(7, $today);
+        $insert->bindValue(5, $course);
+        $insert->bindValue(6, $address);
+        $insert->bindValue(7, $yearLevel);
+        $insert->bindValue(8, $service);
+        $insert->bindValue(9, $payment);
+        $insert->bindValue(10, $paymentPeriod);
+        $insert->bindValue(11, $paymentPercentage);
+        $insert->bindValue(12, $discount);
+        $insert->bindValue(13, $notes);
+        $insert->bindValue(14, $today);
         $insert->execute();
         $ticketId = (int) $insert->fetchColumn();
         $conn->commit();
@@ -197,7 +218,7 @@ try {
         $update = $conn->prepare(
             "UPDATE queue_tickets SET status = 'serving'
              WHERE ticket_id = ? AND status = 'waiting'
-             RETURNING ticket_id, ticket_number, lane, student_name, student_id, transaction_type, payment_method, status, service_date, created_at, completed_at"
+             RETURNING ticket_id, ticket_number, lane, student_name, student_id, course, address, year_level, transaction_type, payment_method, payment_period, payment_percentage, discount, notes, status, service_date, created_at, completed_at"
         );
         $update->execute([$ticketId]);
         $ticket = $update->fetch();
@@ -234,11 +255,33 @@ try {
     respond(400, ['success' => false, 'message' => 'Unknown action']);
 } catch (Throwable $error) {
     if (isset($conn) && $conn instanceof PDO && $conn->inTransaction()) {
-        $conn->rollBack();
+        try {
+            $conn->rollBack();
+        } catch (Throwable $rollbackError) {
+            error_log("Queue API rollback failure [$requestId]: " . $rollbackError->getMessage());
+        }
     }
-    error_log('Queue API error: ' . $error->getMessage());
+    error_log(sprintf(
+        'Queue API error [%s]: %s in %s:%d',
+        $requestId,
+        $error->getMessage(),
+        $error->getFile(),
+        $error->getLine()
+    ));
     if ($error instanceof PDOException && $error->getCode() === '23505') {
-        respond(409, ['success' => false, 'message' => 'An active ticket already exists for this student']);
+        respond(409, [
+            'success' => false,
+            'message' => 'An active ticket already exists for this student',
+            'request_id' => $requestId,
+        ]);
     }
-    respond(500, ['success' => false, 'message' => 'The queue service is temporarily unavailable']);
+    $payload = [
+        'success' => false,
+        'message' => "The queue service is temporarily unavailable (Reference: $requestId)",
+        'request_id' => $requestId,
+    ];
+    if (getenv('APP_DEBUG') === 'true') {
+        $payload['debug'] = $error->getMessage();
+    }
+    respond(500, $payload);
 }

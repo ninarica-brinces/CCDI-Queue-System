@@ -114,8 +114,13 @@ async function joinQueue() {
                     : "Regular",
                 studentId,
                 studentName: name,
+                course,
+                address,
+                yearLevel: year,
                 service: selectedServiceText,
-                payment: `${period} / ${type} / ${course} (${year})${relation ? ` / ${relation}` : ""}`
+                payment: type,
+                paymentPeriod: period,
+                notes: relation
             })
         });
         const result = await response.json();

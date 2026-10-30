@@ -1,103 +1,226 @@
 <?php
-require_once 'db.php';
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
 
-$method = $_SERVER['REQUEST_METHOD'];
-$action = $_GET['action'] ?? '';
-$today = date('Y-m-d');
-
-// 1. GET STATE (Kunin ang mga active tickets ngayong araw)
-if ($method === 'GET' && $action === 'get_state') {
-    $stmt = $conn->prepare("SELECT * FROM queue_tickets WHERE service_date = ? ORDER BY created_at ASC");
-    $stmt->bind_param("s", $today);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    
-    $tickets = [];
-    while ($row = $result->fetch_assoc()) {
-        $tickets[] = $row;
-    }
-    
-    echo json_encode(["success" => true, "data" => $tickets]);
+function respond($status, $payload)
+{
+    http_response_code($status);
+    echo json_encode($payload);
     exit();
 }
 
-// 2. SEARCH STUDENTS (Pinagsama ang first_name at last_name mula sa ccdi_students)
-if ($method === 'GET' && $action === 'search_students') {
-    $query = $_GET['q'] ?? '';
-    $searchTerm = "%" . $query . "%";
-    
-    $stmt = $conn->prepare("SELECT CONCAT(first_name, ' ', last_name) AS student_name FROM ccdi_students WHERE first_name LIKE ? OR last_name LIKE ? LIMIT 10");
-    $stmt->bind_param("ss", $searchTerm, $searchTerm);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    
-    $students = [];
-    while ($row = $result->fetch_assoc()) {
-        $students[] = $row['student_name'];
+function requestString($input, $key)
+{
+    $value = $input[$key] ?? '';
+    if (!is_string($value) && !is_numeric($value)) {
+        respond(400, ['success' => false, 'message' => "Invalid value for $key"]);
     }
-    
-    echo json_encode(["success" => true, "data" => $students]);
+    return trim((string) $value);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
     exit();
 }
 
-// 3. POST ACTIONS (Create, Update Status, Reset Day)
-if ($method === 'POST') {
+$timezone = getenv('APP_TIMEZONE');
+
+try {
+    date_default_timezone_set($timezone !== false && $timezone !== '' ? $timezone : 'Asia/Manila');
+    require_once __DIR__ . '/db.php';
+
+    $method = $_SERVER['REQUEST_METHOD'];
+    $action = $_GET['action'] ?? '';
+    $today = date('Y-m-d');
+
+    if ($method === 'GET' && $action === 'get_state') {
+        $stmt = $conn->prepare(
+            'SELECT * FROM queue_tickets WHERE service_date = ? ORDER BY created_at ASC, ticket_id ASC'
+        );
+        $stmt->execute([$today]);
+        respond(200, ['success' => true, 'data' => $stmt->fetchAll()]);
+    }
+
+    if ($method === 'GET' && $action === 'search_students') {
+        $query = requestString($_GET, 'q');
+        if ($query === '') {
+            respond(200, ['success' => true, 'data' => []]);
+        }
+
+        $searchTerm = '%' . $query . '%';
+        $stmt = $conn->prepare(
+            "SELECT first_name || ' ' || last_name AS student_name
+             FROM ccdi_students
+             WHERE first_name ILIKE ? OR last_name ILIKE ?
+             LIMIT 10"
+        );
+        $stmt->execute([$searchTerm, $searchTerm]);
+        respond(200, ['success' => true, 'data' => array_column($stmt->fetchAll(), 'student_name')]);
+    }
+
+    if ($method !== 'POST') {
+        respond(405, ['success' => false, 'message' => 'Method not allowed']);
+    }
+
     $input = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($input)) {
+        respond(400, ['success' => false, 'message' => 'Request body must be valid JSON']);
+    }
+
     $actionType = $input['action'] ?? '';
 
     if ($actionType === 'create_ticket') {
-        $lane = $input['lane'];
-        $studentName = $input['studentName'];
-        $service = $input['service'];
-        $payment = $input['payment'];
-        $discount = isset($input['discount']) && $input['discount'] !== '' ? $input['discount'] : 'None';
-        $prefix = ($lane === 'Priority') ? 'P' : 'A';
+        $lane = requestString($input, 'lane');
+        $studentName = requestString($input, 'studentName');
+        $studentId = requestString($input, 'studentId');
+        $service = requestString($input, 'service');
+        $payment = requestString($input, 'payment');
+        $discount = requestString($input, 'discount');
 
-        $stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM queue_tickets WHERE lane = ? AND service_date = ?");
-        $stmt->bind_param("ss", $lane, $today);
-        $stmt->execute();
-        $count = $stmt->get_result()->fetch_assoc()['cnt'] + 1;
-        $ticketNumber = $prefix . '-' . str_pad($count, 3, '0', STR_PAD_LEFT);
-
-        // Pagsasamahin ang Payment at Discount sa Record
-        $paymentWithDiscount = ($discount !== 'None') ? $payment . " (Discount: " . $discount . ")" : $payment;
-
-        $stmt = $conn->prepare("INSERT INTO queue_tickets (ticket_number, lane, student_name, transaction_type, payment_method, status, service_date) VALUES (?, ?, ?, ?, ?, 'waiting', ?)");
-        $stmt->bind_param("ssssss", $ticketNumber, $lane, $studentName, $service, $paymentWithDiscount, $today);
-        
-        if ($stmt->execute()) {
-            echo json_encode(["success" => true, "ticket_id" => $conn->insert_id, "ticket_number" => $ticketNumber]);
-        } else {
-            echo json_encode(["success" => false, "message" => "Failed to create ticket"]);
+        if (!in_array($lane, ['Regular', 'Priority'], true)) {
+            respond(400, ['success' => false, 'message' => 'Lane must be Regular or Priority']);
         }
-        exit();
+        if ($studentName === '' || $service === '' || $payment === '') {
+            respond(400, ['success' => false, 'message' => 'Student name, service, and payment are required']);
+        }
+        if (strlen($studentName) > 120 || strlen($studentId) > 64 || strlen($service) > 120 || strlen($payment) > 240 || strlen($discount) > 120) {
+            respond(400, ['success' => false, 'message' => 'One or more ticket fields exceed the allowed length']);
+        }
+
+        $paymentWithDiscount = $discount !== '' && $discount !== 'None'
+            ? $payment . ' (Discount: ' . $discount . ')'
+            : $payment;
+        if (strlen($paymentWithDiscount) > 240) {
+            respond(400, ['success' => false, 'message' => 'Payment details exceed the allowed length']);
+        }
+
+        $conn->beginTransaction();
+        $lock = $conn->prepare("SELECT pg_advisory_xact_lock(hashtext(?))");
+        $lock->execute(["ticket-number:$today:$lane"]);
+
+        if ($studentId !== '') {
+            $active = $conn->prepare(
+                "SELECT 1 FROM queue_tickets
+                 WHERE service_date = ? AND student_id = ? AND status IN ('waiting', 'serving')
+                 LIMIT 1"
+            );
+            $active->execute([$today, $studentId]);
+            if ($active->fetchColumn()) {
+                $conn->rollBack();
+                respond(409, ['success' => false, 'message' => 'This student already has an active ticket today']);
+            }
+        }
+
+        $count = $conn->prepare(
+            'SELECT COUNT(*) FROM queue_tickets WHERE lane = ? AND service_date = ?'
+        );
+        $count->execute([$lane, $today]);
+        $prefix = $lane === 'Priority' ? 'P' : 'A';
+        $ticketNumber = $prefix . '-' . str_pad((string) ((int) $count->fetchColumn() + 1), 3, '0', STR_PAD_LEFT);
+
+        $insert = $conn->prepare(
+            "INSERT INTO queue_tickets
+                (ticket_number, lane, student_name, student_id, transaction_type, payment_method, status, service_date)
+             VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?)
+             RETURNING ticket_id"
+        );
+        $insert->execute([
+            $ticketNumber,
+            $lane,
+            $studentName,
+            $studentId !== '' ? $studentId : null,
+            $service,
+            $paymentWithDiscount,
+            $today,
+        ]);
+        $ticketId = (int) $insert->fetchColumn();
+        $conn->commit();
+
+        respond(201, ['success' => true, 'ticket_id' => $ticketId, 'ticket_number' => $ticketNumber]);
+    }
+
+    if ($actionType === 'call_next') {
+        $lane = requestString($input, 'lane');
+        if (!in_array($lane, ['Regular', 'Priority'], true)) {
+            respond(400, ['success' => false, 'message' => 'Lane must be Regular or Priority']);
+        }
+
+        $conn->beginTransaction();
+        $lock = $conn->prepare("SELECT pg_advisory_xact_lock(hashtext(?))");
+        $lock->execute(["serving:$today:$lane"]);
+
+        $serving = $conn->prepare(
+            "SELECT ticket_id FROM queue_tickets
+             WHERE service_date = ? AND lane = ? AND status = 'serving'
+             LIMIT 1"
+        );
+        $serving->execute([$today, $lane]);
+        if ($serving->fetchColumn()) {
+            $conn->rollBack();
+            respond(409, ['success' => false, 'message' => 'A ticket is already being served in this lane']);
+        }
+
+        $next = $conn->prepare(
+            "SELECT ticket_id FROM queue_tickets
+             WHERE service_date = ? AND lane = ? AND status = 'waiting'
+             ORDER BY created_at ASC, ticket_id ASC
+             LIMIT 1"
+        );
+        $next->execute([$today, $lane]);
+        $ticketId = $next->fetchColumn();
+        if ($ticketId === false) {
+            $conn->rollBack();
+            respond(404, ['success' => false, 'message' => 'No tickets are waiting in this lane']);
+        }
+
+        $update = $conn->prepare(
+            "UPDATE queue_tickets SET status = 'serving'
+             WHERE ticket_id = ? AND status = 'waiting'
+             RETURNING ticket_id, ticket_number, lane, student_name, student_id, transaction_type, payment_method, status, service_date, created_at, completed_at"
+        );
+        $update->execute([$ticketId]);
+        $ticket = $update->fetch();
+        $conn->commit();
+        respond(200, ['success' => true, 'data' => $ticket]);
     }
 
     if ($actionType === 'update_status') {
-        $ticketId = $input['ticket_id'];
-        $status = $input['status'];
-        $completedAt = ($status === 'completed' || $status === 'cancelled') ? date('Y-m-d H:i:s') : null;
-
-        $stmt = $conn->prepare("UPDATE queue_tickets SET status = ?, completed_at = ? WHERE ticket_id = ?");
-        $stmt->bind_param("ssi", $status, $completedAt, $ticketId);
-        
-        if ($stmt->execute()) {
-            echo json_encode(["success" => true]);
-        } else {
-            echo json_encode(["success" => false, "message" => "Failed to update status"]);
+        $ticketId = filter_var($input['ticket_id'] ?? null, FILTER_VALIDATE_INT);
+        $status = $input['status'] ?? '';
+        if (!$ticketId || !in_array($status, ['completed', 'cancelled'], true)) {
+            respond(400, ['success' => false, 'message' => 'A valid ticket ID and terminal status are required']);
         }
-        exit();
+
+        $stmt = $conn->prepare(
+            "UPDATE queue_tickets
+             SET status = ?, completed_at = CURRENT_TIMESTAMP
+             WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
+             RETURNING ticket_id"
+        );
+        $stmt->execute([$status, $ticketId, $today]);
+        if (!$stmt->fetchColumn()) {
+            respond(409, ['success' => false, 'message' => 'Ticket is no longer being served']);
+        }
+        respond(200, ['success' => true]);
     }
 
     if ($actionType === 'reset_day') {
-        $stmt = $conn->prepare("DELETE FROM queue_tickets WHERE service_date = ?");
-        $stmt->bind_param("s", $today);
-        if ($stmt->execute()) {
-            echo json_encode(["success" => true]);
-        } else {
-            echo json_encode(["success" => false, "message" => "Failed to reset day"]);
-        }
-        exit();
+        $stmt = $conn->prepare('DELETE FROM queue_tickets WHERE service_date = ?');
+        $stmt->execute([$today]);
+        respond(200, ['success' => true]);
     }
+
+    respond(400, ['success' => false, 'message' => 'Unknown action']);
+} catch (Throwable $error) {
+    if (isset($conn) && $conn instanceof PDO && $conn->inTransaction()) {
+        $conn->rollBack();
+    }
+    error_log('Queue API error: ' . $error->getMessage());
+    if ($error instanceof PDOException && $error->getCode() === '23505') {
+        respond(409, ['success' => false, 'message' => 'An active ticket already exists for this student']);
+    }
+    respond(500, ['success' => false, 'message' => 'The queue service is temporarily unavailable']);
 }
-?>

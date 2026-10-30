@@ -1639,152 +1639,63 @@
     let activeStudentId = "";
     let currentlyServing = null;
     let completedCount = 0;
+    let remoteTickets = [];
+    let apiConnected = false;
 
 
     /* =========================================
-       DAILY AUTO-RESET STORAGE LOGIC
-    ========================================= */
-
-    function checkDailyReset() {
-
-      const today = new Date().toDateString();
-
-      const lastSavedDate =
-        localStorage.getItem('ccdi_queue_date');
-
-
-      if (lastSavedDate !== today) {
-
-        localStorage.setItem(
-          'ccdi_queue_date',
-          today
-        );
-
-        localStorage.setItem(
-          'ccdi_counter_A',
-          '0'
-        );
-
-        localStorage.setItem(
-          'ccdi_counter_P',
-          '0'
-        );
-
-        localStorage.setItem(
-          'ccdi_queue_list',
-          JSON.stringify([])
-        );
-
-      }
-
-      // Keep today's counters tied to today's date.
-      // This also clears older saved counter values from previous versions.
-      const counterDate =
-        localStorage.getItem('ccdi_counter_date');
-
-      // One-time migration for this version: if there are no active
-      // tickets, start the Regular (A) counter at 001 instead of using
-      // an old saved counter value. Existing active tickets are preserved.
-      const counterVersion = 'A001-SEQUENTIAL';
-      const savedCounterVersion =
-        localStorage.getItem('ccdi_counter_version');
-
-      if (savedCounterVersion !== counterVersion) {
-        const existingQueue = JSON.parse(
-          localStorage.getItem('ccdi_queue_list') || '[]'
-        );
-
-        if (existingQueue.length === 0) {
-          localStorage.setItem('ccdi_counter_A', '0');
-          localStorage.setItem('ccdi_counter_P', '0');
-        }
-
-        localStorage.setItem(
-          'ccdi_counter_version',
-          counterVersion
-        );
-      }
-
-      if (counterDate !== today) {
-
-        localStorage.setItem(
-          'ccdi_counter_A',
-          '0'
-        );
-
-        localStorage.setItem(
-          'ccdi_counter_P',
-          '0'
-        );
-
-        localStorage.setItem(
-          'ccdi_counter_date',
-          today
-        );
-      }
-    }
-
-
-    checkDailyReset();
-
-
-    /* =========================================
-       GET NEXT QUEUE NUMBER
-    ========================================= */
-
-    function getNextNumber(prefix) {
-
-      checkDailyReset();
-
-      const key =
-        prefix === 'P'
-          ? 'ccdi_counter_P'
-          : 'ccdi_counter_A';
-
-
-      let currentNum =
-        parseInt(
-          localStorage.getItem(key) || '0',
-          10
-        );
-
-
-      // Start at 1 and continue sequentially without restarting at 100.
-      currentNum += 1;
-
-
-      localStorage.setItem(
-        key,
-        currentNum.toString()
-      );
-
-
-      return `${prefix}-${String(currentNum).padStart(3, '0')}`;
-    }
-
-
-    /* =========================================
-       QUEUE STORAGE
+       SHARED QUEUE STATE
     ========================================= */
 
     function getQueueList() {
-
-      checkDailyReset();
-
-      return JSON.parse(
-        localStorage.getItem(
-          'ccdi_queue_list'
-        ) || '[]'
-      );
+      return remoteTickets
+        .filter(ticket => ticket.status === 'waiting')
+        .map(mapPortalTicket);
     }
 
+    function mapPortalTicket(ticket) {
+      return {
+        number: ticket.ticket_number,
+        studentId: ticket.student_id || '',
+        name: ticket.student_name,
+        service: ticket.transaction_type,
+        priority: ticket.lane,
+        detail: ticket.lane,
+        payment: ticket.payment_method,
+        status: ticket.status,
+        time: ticket.created_at
+      };
+    }
 
-    function saveQueueList(list) {
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, character => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[character]);
+    }
 
-      localStorage.setItem(
-        'ccdi_queue_list',
-        JSON.stringify(list)
-      );
+    async function refreshQueueState() {
+      try {
+        const response = await fetch('./api.php?action=get_state', { cache: 'no-store' });
+        const result = await response.json();
+        if (!response.ok || !result.success || !Array.isArray(result.data)) {
+          throw new Error(result.message || 'Unable to load the shared queue');
+        }
+
+        remoteTickets = result.data;
+        const servingTicket = remoteTickets
+          .filter(ticket => ticket.status === 'serving')
+          .sort((a, b) => a.lane.localeCompare(b.lane))[0];
+        currentlyServing = servingTicket ? mapPortalTicket(servingTicket) : null;
+        completedCount = remoteTickets.filter(ticket => ticket.status === 'completed').length;
+        apiConnected = true;
+      } catch (error) {
+        apiConnected = false;
+        console.error('Failed to sync with the shared queue:', error);
+      }
 
       updateUI();
     }
@@ -2024,9 +1935,7 @@
           'cashierModal'
         );
 
-        switchView(
-          'cashierView'
-        );
+        window.location.href = 'cashier.html';
 
       } else {
 
@@ -2149,7 +2058,7 @@
        TICKET / QUEUE GENERATION
     ========================================= */
 
-    function generateTicket() {
+    async function generateTicket() {
 
       const studId =
         activeStudentId ||
@@ -2321,10 +2230,6 @@
       }
 
 
-      const queueList =
-        getQueueList();
-
-
       /*
         ACTIVE-QUEUE RESTRICTION
 
@@ -2332,128 +2237,47 @@
         waiting or currently-serving ticket.
       */
 
-      const existingInQueue =
-        queueList.find(
-          t => t.studentId === studId
-        );
-
-
-      const isCurrentlyBeingServed =
-        currentlyServing &&
-        currentlyServing.studentId === studId;
-
-
-      if (
-        existingInQueue ||
-        isCurrentlyBeingServed
-      ) {
+      const existingTicket = remoteTickets.find(
+        ticket => ticket.student_id === studId &&
+          ['waiting', 'serving'].includes(ticket.status)
+      );
+      if (existingTicket) {
 
         alert(
-          `Restriction: Student ID ${studId} already has an active queue ticket! You cannot join the queue again until your current transaction is completed.`
+          `Restriction: Student ID ${studId} already has active ticket ${existingTicket.ticket_number}.`
         );
 
         return;
       }
 
+      const button = document.getElementById('btnGenerateTicket');
+      button.disabled = true;
+      try {
+        const response = await fetch('./api.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create_ticket',
+            lane: lane.includes('PWD') ? 'Priority' : 'Regular',
+            studentId: studId,
+            studentName: studName,
+            service: currentService,
+            payment: `${payTypeInput.value} / ${periodInput.value} / ${payPercentage}%${lane === 'Parent/Guardian' ? ` / Parent: ${relation}` : ''}`
+          })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to join the shared queue');
+        }
 
-      /*
-        PREFIX RULE
-
-        PWD / Senior = P
-        Regular = A
-        Parent / Guardian = A
-      */
-
-      const prefix =
-        lane.includes('PWD')
-          ? 'P'
-          : 'A';
-
-
-      const ticketNum =
-        getNextNumber(prefix);
-
-
-      let detailTag =
-        lane;
-
-
-      if (
-        lane === 'Parent/Guardian'
-      ) {
-
-        detailTag =
-          `Parent (${relation})`;
+        await refreshQueueState();
+        document.getElementById('btnGenerateTicket').innerText = "✓ JOINED QUEUE";
+        setJoinedQueueMode(true);
+      } catch (error) {
+        console.error('Failed to create a shared queue ticket:', error);
+        alert(error.message || 'Unable to join the queue. Please try again.');
+        button.disabled = false;
       }
-
-
-      const newTicket = {
-
-        number: ticketNum,
-
-        studentId: studId,
-
-        name: studName,
-
-        address: studAddress,
-
-        course: studCourse,
-
-        year: studYear,
-
-        service: currentService,
-
-        period: periodInput.value,
-
-        paymentType: payTypeInput.value,
-
-        paymentPercentage: payPercentage,
-
-        priority: lane,
-
-        detail: detailTag,
-
-        time:
-          new Date().toLocaleTimeString(
-            [],
-            {
-              hour: '2-digit',
-              minute: '2-digit'
-            }
-          )
-
-      };
-
-
-      queueList.push(
-        newTicket
-      );
-
-
-      saveQueueList(
-        queueList
-      );
-
-
-      /*
-        Change the button state to JOINED QUEUE.
-        The form is then hidden and only the
-        student's queue number and current
-        serving number remain visible.
-      */
-
-      document.getElementById(
-        'btnGenerateTicket'
-      ).innerText =
-        "✓ JOINED QUEUE";
-
-
-      setJoinedQueueMode(
-        true
-      );
-
-
-      updateUI();
     }
 
 
@@ -2461,66 +2285,31 @@
        CASHIER: CALL NEXT TICKET
     ========================================= */
 
-    function callNextTicket() {
-
-      const list =
-        getQueueList();
-
-
-      if (list.length === 0) {
-
-        alert(
-          "No tickets currently waiting in queue."
-        );
-
+    async function callNextTicket() {
+      const lane = ['Priority', 'Regular'].find(candidate =>
+        remoteTickets.some(ticket => ticket.lane === candidate && ticket.status === 'waiting') &&
+        !remoteTickets.some(ticket => ticket.lane === candidate && ticket.status === 'serving')
+      );
+      if (!lane) {
+        alert('No lane has a waiting ticket available to call.');
         return;
       }
-
-
-      /*
-        PRIORITY SORT
-
-        PWD / Senior = 1
-        Parent / Guardian = 2
-        Regular = 3
-      */
-
-      list.sort(
-        (a, b) => {
-
-          const priorityOrder =
-            (p) =>
-              p.includes('PWD')
-                ? 1
-                : (
-                    p.includes('Parent')
-                      ? 2
-                      : 3
-                  );
-
-
-          return (
-            priorityOrder(a.priority) -
-            priorityOrder(b.priority)
-          );
-
+      try {
+        const response = await fetch('./api.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'call_next', lane })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to call the next ticket');
         }
-      );
-
-
-      currentlyServing =
-        list.shift();
-
-
-      saveQueueList(
-        list
-      );
-
-
-      playChime();
-
-
-      updateUI();
+        playChime();
+        await refreshQueueState();
+      } catch (error) {
+        console.error('Failed to call the next ticket:', error);
+        alert(error.message || 'Unable to call the next ticket');
+      }
     }
 
 
@@ -2553,34 +2342,36 @@
        CASHIER: COMPLETE
     ========================================= */
 
-    function completeTicket() {
+    async function completeTicket() {
+      if (!currentlyServing) return;
 
-      if (!currentlyServing) {
-        return;
+      try {
+        const ticket = remoteTickets.find(item =>
+          item.status === 'serving' &&
+          item.ticket_number === currentlyServing.number
+        );
+        if (!ticket) {
+          throw new Error('The active ticket could not be found in the shared queue');
+        }
+
+        const response = await fetch('./api.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'update_status',
+            ticket_id: ticket.ticket_id,
+            status: 'completed'
+          })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to complete the ticket');
+        }
+        await refreshQueueState();
+      } catch (error) {
+        console.error('Failed to complete the ticket:', error);
+        alert(error.message || 'Unable to complete the ticket');
       }
-
-
-      completedCount++;
-
-
-      currentlyServing =
-        null;
-
-
-      /*
-        IMPORTANT:
-
-        updateUI() detects that the
-        student's ticket is no longer
-        active and automatically:
-
-        - Shows the form again
-        - Changes JOINED QUEUE back
-          to JOIN QUEUE
-        - Clears the student's queue display
-      */
-
-      updateUI();
     }
 
 
@@ -2725,14 +2516,10 @@
       const studId =
         activeStudentId;
 
-      const hasActiveTicket =
-        list.some(
-          t => t.studentId === studId
-        ) ||
-        (
-          currentlyServing &&
-          currentlyServing.studentId === studId
-        );
+      const hasActiveTicket = remoteTickets.some(
+        ticket => ticket.student_id === studId &&
+          ['waiting', 'serving'].includes(ticket.status)
+      );
 
       if (hasActiveTicket) {
         btnGen.disabled = true;
@@ -2780,13 +2567,12 @@
         currently serving ticket.
       */
 
-      const myServingTicket =
-        (
-          currentlyServing &&
-          currentlyServing.studentId === studId
-        )
-          ? currentlyServing
-          : null;
+      const currentStudentTicket = remoteTickets.find(
+        ticket => ticket.student_id === studId && ticket.status === 'serving'
+      );
+      const myServingTicket = currentStudentTicket
+        ? mapPortalTicket(currentStudentTicket)
+        : null;
 
 
       const btnGen =
@@ -3040,20 +2826,18 @@
       document.getElementById(
         'statA'
       ).innerText =
-        `A-${String(
-          localStorage.getItem(
-            'ccdi_counter_A'
-          ) || 0
+        `A-${String(remoteTickets
+          .filter(ticket => ticket.lane === 'Regular')
+          .reduce((max, ticket) => Math.max(max, Number(ticket.ticket_number.split('-')[1]) || 0), 0)
         ).padStart(3, '0')}`;
 
 
       document.getElementById(
         'statP'
       ).innerText =
-        `P-${String(
-          localStorage.getItem(
-            'ccdi_counter_P'
-          ) || 0
+        `P-${String(remoteTickets
+          .filter(ticket => ticket.lane === 'Priority')
+          .reduce((max, ticket) => Math.max(max, Number(ticket.ticket_number.split('-')[1]) || 0), 0)
         ).padStart(3, '0')}`;
 
 
@@ -3122,36 +2906,36 @@
 
                     <td>
                       <strong>
-                        ${item.number}
+                        ${escapeHtml(item.number)}
                       </strong>
                     </td>
 
                     <td>
-                      ${item.name}
+                      ${escapeHtml(item.name)}
 
                       <br>
 
                       <small
                         style="color:var(--text-muted)"
                       >
-                        ID: ${item.studentId}
+                        ID: ${escapeHtml(item.studentId)}
                       </small>
                     </td>
 
                     <td>
-                      ${item.service}
+                      ${escapeHtml(item.service)}
                     </td>
 
                     <td>
                       <span
                         class="tag-badge ${badgeClass}"
                       >
-                        ${item.detail}
+                        ${escapeHtml(item.detail)}
                       </span>
                     </td>
 
                     <td>
-                      ${item.time}
+                      ${escapeHtml(item.time)}
                     </td>
 
                   </tr>
@@ -3162,6 +2946,11 @@
             .join('');
       }
 
+      if (!apiConnected) {
+        document.getElementById('ticketStatusText').innerText =
+          'Connection to the shared queue lost. Reconnecting...';
+      }
+
     }
 
 
@@ -3169,10 +2958,7 @@
        REAL-TIME SYNCHRONIZATION
     ========================================= */
 
-    setInterval(
-      updateUI,
-      1500
-    );
+    setInterval(refreshQueueState, 1500);
 
 
     /* =========================================
@@ -3202,7 +2988,7 @@
     );
 
 
-updateUI();
+refreshQueueState();
 
   </script>
 

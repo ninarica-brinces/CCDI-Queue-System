@@ -1,5 +1,5 @@
 export const APP_CONFIG = {
-  apiUrl: 'http://localhost/ccdi-cashier/api.php', // Siguraduhing tugma sa pangalan ng folder mo sa XAMPP htdocs
+  apiUrl: './api.php', // API is served with the app locally and on Render.
   lanes: [
     { id: 'Regular', label: 'Regular Lane', prefix: 'A' },
     { id: 'Priority', label: 'Priority Lane (PWD / Senior / Parents)', prefix: 'P' }

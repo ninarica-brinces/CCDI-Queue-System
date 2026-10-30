@@ -20,21 +20,24 @@ export class QueueManager {
 
   async init() {
     await this.fetchState();
+    setInterval(() => this.fetchState(), 1500);
   }
 
-  // Kunin ang estado mula sa XAMPP MySQL gamit ang api.php
   async fetchState() {
     try {
-      const response = await fetch(`${APP_CONFIG.apiUrl}?action=get_state`);
+      const response = await fetch(`${APP_CONFIG.apiUrl}?action=get_state`, { cache: 'no-store' });
       const result = await response.json();
 
-      if (result.success) {
-        this.#processDatabaseTickets(result.data);
-        this.#notify();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to load queue state');
       }
+
+      this.#processDatabaseTickets(result.data);
+      this.#notify();
+      this.#setSyncStatus('Connected to PostgreSQL');
     } catch (error) {
-      console.error('Failed to fetch queue state from XAMPP:', error);
-      this.#setSyncStatus('XAMPP Disconnected');
+      console.error('Failed to fetch queue state:', error);
+      this.#setSyncStatus('PostgreSQL disconnected');
     }
   }
 
@@ -97,7 +100,7 @@ export class QueueManager {
 
   subscribeToSyncStatus(listener) {
     this.#statusListeners.push(listener);
-    listener('Connected to XAMPP MySQL');
+    listener('Connecting to PostgreSQL');
   }
 
   async createTicket({ lane, studentName, service, payment, discount }) {
@@ -115,27 +118,43 @@ export class QueueManager {
         })
       });
       const result = await response.json();
-      if (result.success) {
-        await this.fetchState();
-      } else {
-        alert(result.message || 'Failed to create ticket');
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to create ticket');
       }
+
+      await this.fetchState();
+      return true;
     } catch (error) {
       console.error('Error creating ticket:', error);
+      alert(error.message || 'Failed to create ticket');
+      return false;
     }
   }
+
   async callNext(lane) {
-    const isPriority = lane === 'Priority';
-    const queue = isPriority ? this.#state.priorityQueue : this.#state.regularQueue;
-    const currentKey = isPriority ? 'currentPriority' : 'currentRegular';
+    try {
+      const response = await fetch(APP_CONFIG.apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'call_next', lane })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to call the next ticket');
+      }
 
-    if (this.#state[currentKey] || queue.length === 0) return false;
-
-    const ticket = queue[0]; // Kunin ang una sa pila
-    await this.#updateTicketStatus(ticket.dbId, 'serving');
-    this.announceTicket(ticket);
-    await this.fetchState();
-    return true;
+      this.announceTicket({
+        id: result.data.ticket_number,
+        lane: result.data.lane
+      });
+      await this.fetchState();
+      return true;
+    } catch (error) {
+      console.error('Failed to call next ticket:', error);
+      alert(error.message || 'Failed to call next ticket');
+      await this.fetchState();
+      return false;
+    }
   }
 
   async completeCurrent(lane) {
@@ -153,13 +172,18 @@ export class QueueManager {
 
     if (!ticket) return;
 
-    await this.#updateTicketStatus(ticket.dbId, status);
-    await this.fetchState();
+    try {
+      await this.#updateTicketStatus(ticket.dbId, status);
+      await this.fetchState();
+    } catch (error) {
+      console.error('Failed to update ticket status:', error);
+      alert(error.message || 'Failed to update ticket status');
+    }
   }
 
   async #updateTicketStatus(ticketId, status) {
     try {
-      await fetch(APP_CONFIG.apiUrl, {
+      const response = await fetch(APP_CONFIG.apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -168,8 +192,12 @@ export class QueueManager {
           status: status
         })
       });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to update ticket status');
+      }
     } catch (error) {
-      console.error('Failed to update ticket status:', error);
+      throw error;
     }
   }
 
@@ -192,11 +220,10 @@ export class QueueManager {
         body: JSON.stringify({ action: 'reset_day' })
       });
       const result = await response.json();
-      if (result.success) {
-        await this.fetchState();
-      } else {
-        throw new Error(result.message);
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to reset queue');
       }
+      await this.fetchState();
     } catch (error) {
       console.error('Failed to reset day:', error);
       throw error;

@@ -255,7 +255,7 @@ function setupAutocomplete() {
       const response = await fetch(`${APP_CONFIG.apiUrl}?action=search_students&q=${encodeURIComponent(keyword)}`);
       const result = await response.json();
 
-      if (result.success && result.data) {
+      if (response.ok && result.success && result.data) {
         suggestionList.innerHTML = '';
         result.data.forEach(name => {
           const option = document.createElement('option');
@@ -304,7 +304,7 @@ function bindEvents() {
       return;
     }
 
-    await queueManager.createTicket({
+    const created = await queueManager.createTicket({
       lane: elements.laneTypeSelect.value,
       studentName: studentName,
       service: elements.serviceTypeSelect.value,
@@ -312,6 +312,7 @@ function bindEvents() {
       discount: customDiscount
     });
 
+    if (!created) return;
     elements.ticketForm.reset();
     elements.dialog.close();
   });
@@ -413,6 +414,10 @@ function init() {
   setupAutocomplete();
 
   queueManager.subscribe(renderUI);
+  queueManager.subscribeToSyncStatus((status) => {
+    const statusElement = document.getElementById('storageStatus');
+    if (statusElement) statusElement.textContent = status;
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

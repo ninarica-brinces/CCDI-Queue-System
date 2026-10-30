@@ -283,9 +283,15 @@
           <select id="laneType" name="laneType" required></select>
         </div>
         <div class="form-group">
+          <label for="studentLookup">Find CCDI student by ID or name</label>
+          <input type="search" id="studentLookup" name="studentLookup" placeholder="Type a student ID or name" autocomplete="off" aria-controls="studentSearchResults" aria-autocomplete="list">
+          <div id="studentSearchResults" class="student-search-results" role="listbox" hidden></div>
+          <small id="studentDetails" class="muted"></small>
+          <input type="hidden" id="studentDatabaseId" name="studentDatabaseId">
+        </div>
+        <div class="form-group">
           <label for="studentName">Student / Client Name</label>
-          <input type="text" id="studentName" name="studentName" placeholder="Enter full name" required maxlength="60" autocomplete="off" list="studentSuggestions">
-          <datalist id="studentSuggestions"></datalist>
+          <input type="text" id="studentName" name="studentName" placeholder="Enter full name" required maxlength="120" autocomplete="off">
         </div>
         <div class="form-group">
           <label for="serviceType">Service Requested</label>

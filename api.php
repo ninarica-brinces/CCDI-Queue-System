@@ -44,23 +44,36 @@ try {
         respond(200, ['success' => true, 'data' => $stmt->fetchAll()]);
     }
 
-    if ($method === 'GET' && $action === 'search_students') {
+    if ($method === 'GET' && in_array($action, ['search_students', 'search_student'], true)) {
         $query = requestString($_GET, 'q');
+        if (strlen($query) > 100) {
+            respond(400, ['success' => false, 'message' => 'Search query is too long']);
+        }
         if ($query === '') {
             respond(200, ['success' => true, 'data' => []]);
         }
 
         $searchTerm = '%' . $query . '%';
         $stmt = $conn->prepare(
-            "SELECT first_name || ' ' || last_name AS student_name
+            "SELECT student_id, first_name, last_name,
+                    first_name || ' ' || last_name AS full_name,
+                    course, address, year_level
              FROM ccdi_students
-             WHERE first_name ILIKE ? OR last_name ILIKE ?
+             WHERE student_id ILIKE :student_id
+                OR first_name ILIKE :first_name
+                OR last_name ILIKE :last_name
+                OR (first_name || ' ' || last_name) ILIKE :full_name
+             ORDER BY last_name, first_name
              LIMIT 10"
         );
-        $stmt->execute([$searchTerm, $searchTerm]);
-        respond(200, ['success' => true, 'data' => array_column($stmt->fetchAll(), 'student_name')]);
+        $stmt->execute([
+            'student_id' => $searchTerm,
+            'first_name' => $searchTerm,
+            'last_name' => $searchTerm,
+            'full_name' => $searchTerm,
+        ]);
+        respond(200, ['success' => true, 'data' => $stmt->fetchAll()]);
     }
-
     if ($method !== 'POST') {
         respond(405, ['success' => false, 'message' => 'Method not allowed']);
     }
@@ -102,6 +115,8 @@ try {
         $lock->execute(["ticket-number:$today:$lane"]);
 
         if ($studentId !== '') {
+            $studentLock = $conn->prepare("SELECT pg_advisory_xact_lock(hashtext(?))");
+            $studentLock->execute(["student:$today:$studentId"]);
             $active = $conn->prepare(
                 "SELECT 1 FROM queue_tickets
                  WHERE service_date = ? AND student_id = ? AND status IN ('waiting', 'serving')
@@ -127,15 +142,18 @@ try {
              VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?)
              RETURNING ticket_id"
         );
-        $insert->execute([
-            $ticketNumber,
-            $lane,
-            $studentName,
+        $insert->bindValue(1, $ticketNumber);
+        $insert->bindValue(2, $lane);
+        $insert->bindValue(3, $studentName);
+        $insert->bindValue(
+            4,
             $studentId !== '' ? $studentId : null,
-            $service,
-            $paymentWithDiscount,
-            $today,
-        ]);
+            $studentId !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL
+        );
+        $insert->bindValue(5, $service);
+        $insert->bindValue(6, $paymentWithDiscount);
+        $insert->bindValue(7, $today);
+        $insert->execute();
         $ticketId = (int) $insert->fetchColumn();
         $conn->commit();
 

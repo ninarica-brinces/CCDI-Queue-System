@@ -1,13 +1,3 @@
-// Base counters for Regular (A) and Priority (P) lanes
-// Loads existing counters from LocalStorage so numbers don't reset on page refresh
-let counters = JSON.parse(localStorage.getItem("queueCounters")) || {
-    regular: 0,  // Next regular starts at A-001
-    priority: 0  // Next priority starts at P-001
-};
-
-// Maximum queue limit per lane
-const QUEUE_LIMIT = 100;
-
 let selectedServiceText = "Tuition Payment";
 
 // Event listener initialization once the DOM fully loads
@@ -55,7 +45,7 @@ function toggleRelationField() {
 }
 
 // Main Queue Generation & Form Processing Logic
-function joinQueue() {
+async function joinQueue() {
     // -------------------------------------------------------------
     // 1. FETCH & VALIDATE FORM INPUTS
     // -------------------------------------------------------------
@@ -100,107 +90,108 @@ function joinQueue() {
         return;
     }
 
-    // -------------------------------------------------------------
-    // 2. CHECK QUEUE LIMIT (CAP AT 100)
-    // -------------------------------------------------------------
-    if (laneValue === "Regular" && counters.regular >= QUEUE_LIMIT) {
-        alert(`Regular Lane queue has reached the maximum capacity of ${QUEUE_LIMIT}. Please try again later.`);
-        return;
-    }
-    if (laneValue !== "Regular" && counters.priority >= QUEUE_LIMIT) {
-        alert(`Priority Lane queue has reached the maximum capacity of ${QUEUE_LIMIT}. Please try again later.`);
-        return;
-    }
-
-    // -------------------------------------------------------------
-    // 3. QUEUE SEQUENCE LOGIC
-    // -------------------------------------------------------------
-    let prefix = "A";
-    let currentNum = 0;
-
-    if (laneValue === "Regular") {
-        prefix = "A";
-        counters.regular += 1;
-        currentNum = counters.regular;
-    } else {
-        prefix = "P";
-        counters.priority += 1;
-        currentNum = counters.priority;
-    }
-
-    // Save updated counters back to LocalStorage
-    localStorage.setItem("queueCounters", JSON.stringify(counters));
-
-    const formattedNum = String(currentNum).padStart(3, "0");
-    const queueNumber = `${prefix}-${formattedNum}`;
-
-    // Safely Fetch Radio Selections
+    // Safely fetch radio selections
     const periodElem = document.querySelector('input[name="period"]:checked');
     const typeElem = document.querySelector('input[name="type"]:checked');
 
     const period = periodElem ? periodElem.value : "Prelim";
     const type = typeElem ? typeElem.value : "Partial Payment";
+    const joinButton = document.getElementById("joinQueueBtn");
+    const monitorWindow = window.open("", "_blank");
+    if (joinButton) joinButton.disabled = true;
 
-    // -------------------------------------------------------------
-    // 4. STORE QUEUE TICKET DATA & OPEN MONITORING IN A NEW TAB
-    // -------------------------------------------------------------
-    const ticketData = {
-        queueNumber: queueNumber,
-        name: name,
-        courseYear: `${course} (${year})`,
-        service: selectedServiceText,
-        details: `${period} (${type})`,
-        lane: laneValue,
-        relation: laneValue === "Parent" ? relation : "",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
+    try {
+        const studentId = document.getElementById("studentId")?.value.trim()
+            || document.getElementById("studIdDisplay")?.value.trim()
+            || "";
+        const response = await fetch("./api.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                action: "create_ticket",
+                lane: laneValue.toLowerCase().includes("pwd") || laneValue.toLowerCase().includes("priority")
+                    ? "Priority"
+                    : "Regular",
+                studentId,
+                studentName: name,
+                service: selectedServiceText,
+                payment: `${period} / ${type} / ${course} (${year})${relation ? ` / ${relation}` : ""}`
+            })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || "Unable to join the queue.");
+        }
 
-    localStorage.setItem("latestQueueTicket", JSON.stringify(ticketData));
-    openMonitoringTab(ticketData);
+        const queueNumber = result.ticket_number;
+        const ticketId = Number(result.ticket_id);
+        if (!queueNumber || !Number.isSafeInteger(ticketId) || ticketId < 1) {
+            throw new Error("The queue service returned an invalid ticket.");
+        }
+        const ticketData = {
+            ticketId,
+            queueNumber,
+            name,
+            courseYear: `${course} (${year})`,
+            service: selectedServiceText,
+            details: `${period} (${type})`,
+            lane: laneValue,
+            relation: laneValue === "Parent" ? relation : "",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        };
+        if (monitorWindow) openMonitoringTab(ticketData, monitorWindow);
 
-    // -------------------------------------------------------------
-    // 5. UPDATE LOCAL PAGE UI & UPDATE BUTTON TO "JOINED QUEUE"
-    // -------------------------------------------------------------
-    const queueNumberDisplay = document.getElementById("queueNumber");
-    const queueResultBox = document.getElementById("queueResult");
+        const queueNumberDisplay = document.getElementById("queueNumber");
+        const queueResultBox = document.getElementById("queueResult");
 
-    if (queueNumberDisplay) queueNumberDisplay.textContent = queueNumber;
-    if (queueResultBox) queueResultBox.style.display = "block";
+        if (queueNumberDisplay) queueNumberDisplay.textContent = queueNumber;
+        if (queueResultBox) queueResultBox.style.display = "block";
 
-    const rName = document.getElementById("rName");
-    const rCourse = document.getElementById("rCourse");
-    const rService = document.getElementById("rService");
-    const rDetails = document.getElementById("rDetails");
-    const rQueueNum = document.getElementById("rQueueNum");
+        const rName = document.getElementById("rName");
+        const rCourse = document.getElementById("rCourse");
+        const rService = document.getElementById("rService");
+        const rDetails = document.getElementById("rDetails");
+        const rQueueNum = document.getElementById("rQueueNum");
 
-    if (rName) rName.textContent = name;
-    if (rCourse) rCourse.textContent = `${course} (${year})`;
-    if (rService) rService.textContent = selectedServiceText;
-    if (rDetails) rDetails.textContent = `${period} (${type})`;
-    if (rQueueNum) rQueueNum.textContent = queueNumber;
+        if (rName) rName.textContent = name;
+        if (rCourse) rCourse.textContent = `${course} (${year})`;
+        if (rService) rService.textContent = selectedServiceText;
+        if (rDetails) rDetails.textContent = `${period} (${type})`;
+        if (rQueueNum) rQueueNum.textContent = queueNumber;
 
-    const button = document.getElementById("joinQueueBtn");
-    if (button) {
-        button.textContent = "Joined Queue"; 
-        button.disabled = true;
+        if (joinButton) joinButton.textContent = "Joined Queue";
+    } catch (error) {
+        if (monitorWindow) monitorWindow.close();
+        console.error("Failed to create queue ticket:", error);
+        alert(error.message || "Unable to join the queue. Please try again.");
+        if (joinButton) joinButton.disabled = false;
     }
 }
 
 // Helper function to render and launch the standalone ticket & monitoring tab
-function openMonitoringTab(data) {
-    const monitoringWindow = window.open("", "_blank");
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, character => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[character]);
+}
+
+function openMonitoringTab(data, monitoringWindow) {
     if (!monitoringWindow) {
-        alert("Please allow popups for this site to open your Queue Ticket & Monitoring window.");
         return;
     }
 
+    const apiUrl = new URL("./api.php", window.location.href).href;
     monitoringWindow.document.write(`
         <!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Queue Ticket #${data.queueNumber} - Live Monitor</title>
+            <title>Queue Ticket #${escapeHtml(data.queueNumber)} - Live Monitor</title>
             <style>
                 body {
                     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -267,42 +258,78 @@ function openMonitoringTab(data) {
         </head>
         <body>
             <div class="ticket-card">
-                <span class="status-badge">● Waiting for Counter</span>
+                <span id="ticketStatus" class="status-badge">● Waiting for Counter</span>
                 <div style="color: #718096; font-size: 14px; margin-top: 5px;">Your Queue Number</div>
-                <div class="queue-number">${data.queueNumber}</div>
+                <div class="queue-number">${escapeHtml(data.queueNumber)}</div>
                 
                 <table class="info-table">
                     <tr>
                         <td class="label">Name</td>
-                        <td class="value">${data.name}</td>
+                        <td class="value">${escapeHtml(data.name)}</td>
                     </tr>
                     <tr>
                         <td class="label">Course & Year</td>
-                        <td class="value">${data.courseYear}</td>
+                        <td class="value">${escapeHtml(data.courseYear)}</td>
                     </tr>
                     <tr>
                         <td class="label">Service</td>
-                        <td class="value">${data.service}</td>
+                        <td class="value">${escapeHtml(data.service)}</td>
                     </tr>
                     <tr>
                         <td class="label">Details</td>
-                        <td class="value">${data.details}</td>
+                        <td class="value">${escapeHtml(data.details)}</td>
                     </tr>
                     <tr>
                         <td class="label">Lane Type</td>
-                        <td class="value">${data.lane} ${data.relation ? '(' + data.relation + ')' : ''}</td>
+                        <td class="value">${escapeHtml(data.lane)} ${data.relation ? '(' + escapeHtml(data.relation) + ')' : ''}</td>
                     </tr>
                     <tr>
                         <td class="label">Time Joined</td>
-                        <td class="value">${data.timestamp}</td>
+                        <td class="value">${escapeHtml(data.timestamp)}</td>
                     </tr>
                 </table>
 
                 <p class="footer-text">Please keep this tab open or screenshot your number while waiting.</p>
             </div>
+            <script>
+                const apiUrl = ${JSON.stringify(apiUrl)};
+                const ticketId = ${data.ticketId};
+                const statusElement = document.getElementById('ticketStatus');
+                let pollTimer;
+                async function refreshTicketStatus() {
+                    try {
+                        const response = await fetch(apiUrl + '?action=get_state', { cache: 'no-store' });
+                        const result = await response.json();
+                        if (!response.ok || !result.success || !Array.isArray(result.data)) {
+                            throw new Error(result.message || 'Queue status unavailable');
+                        }
+                        const ticket = result.data.find(item => Number(item.ticket_id) === ticketId);
+                        if (!ticket) {
+                            statusElement.textContent = "Ticket not found in today's queue";
+                            return;
+                        }
+                        const labels = {
+                            waiting: '● Waiting for Counter',
+                            serving: '● NOW SERVING - Please proceed',
+                            completed: '✓ Transaction completed',
+                            cancelled: 'Ticket skipped'
+                        };
+                        statusElement.textContent = labels[ticket.status] || 'Queue status unavailable';
+                        if (ticket.status === 'completed' || ticket.status === 'cancelled') {
+                            clearInterval(pollTimer);
+                        }
+                    } catch (error) {
+                        console.error('Ticket status polling failed:', error);
+                        statusElement.textContent = 'Connection lost. Reconnecting...';
+                    }
+                }
+                refreshTicketStatus();
+                pollTimer = setInterval(refreshTicketStatus, 1500);
+            </script>
         </body>
         </html>
     `);
+    monitoringWindow.document.close();
 }
 
 // Close Modal Function

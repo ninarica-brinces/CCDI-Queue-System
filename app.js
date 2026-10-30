@@ -1,5 +1,6 @@
 import { APP_CONFIG } from './config.js';
 import { QueueManager } from './queueManager.js';
+import { setupStudentSearch } from './studentSearch.js';
 
 let elements = {};
 let queueManager;
@@ -240,32 +241,22 @@ function renderDistributionTable(tbody, dataMap, total) {
   });
 }
 
-// AUTOCOMPLETE IMPLEMENTATION
 function setupAutocomplete() {
-  const studentInput = elements.studentNameInput;
-  const suggestionList = elements.studentSuggestions;
-
-  if (!studentInput || !suggestionList) return;
-
-  studentInput.addEventListener('input', async (e) => {
-    const keyword = e.target.value.trim();
-    if (keyword.length < 1) return;
-
-    try {
-      const response = await fetch(`${APP_CONFIG.apiUrl}?action=search_students&q=${encodeURIComponent(keyword)}`);
-      const result = await response.json();
-
-      if (response.ok && result.success && result.data) {
-        suggestionList.innerHTML = '';
-        result.data.forEach(name => {
-          const option = document.createElement('option');
-          option.value = name;
-          suggestionList.appendChild(option);
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching student suggestions:', error);
+  setupStudentSearch(
+    elements.studentLookup,
+    elements.studentSearchResults,
+    student => {
+      elements.studentDatabaseId.value = student.student_id;
+      elements.studentNameInput.value = student.full_name;
+      elements.studentDetails.textContent =
+        `${student.course}, Year ${student.year_level} | ${student.address}`;
     }
+  );
+
+  elements.studentNameInput.addEventListener('input', () => {
+    elements.studentDatabaseId.value = '';
+    elements.studentDetails.textContent = '';
+    elements.studentLookup.value = '';
   });
 }
 
@@ -306,6 +297,7 @@ function bindEvents() {
 
     const created = await queueManager.createTicket({
       lane: elements.laneTypeSelect.value,
+      studentId: elements.studentDatabaseId.value,
       studentName: studentName,
       service: elements.serviceTypeSelect.value,
       payment: elements.paymentTypeSelect.value,
@@ -314,6 +306,8 @@ function bindEvents() {
 
     if (!created) return;
     elements.ticketForm.reset();
+    elements.studentLookup.value = '';
+    elements.studentDetails.textContent = '';
     elements.dialog.close();
   });
 
@@ -374,7 +368,10 @@ function init() {
     paymentTypeSelect: document.getElementById('paymentType'),
 
     studentNameInput: document.getElementById('studentName'),
-    studentSuggestions: document.getElementById('studentSuggestions'),
+    studentLookup: document.getElementById('studentLookup'),
+    studentSearchResults: document.getElementById('studentSearchResults'),
+    studentDatabaseId: document.getElementById('studentDatabaseId'),
+    studentDetails: document.getElementById('studentDetails'),
     customDiscountInput: document.getElementById('customDiscount'),
 
     liveClock: document.getElementById('liveClock'),

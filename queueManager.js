@@ -13,6 +13,7 @@ export class QueueManager {
   #state = structuredClone(EMPTY_STATE);
   #listeners = [];
   #statusListeners = [];
+  #isFetching = false;
 
   constructor() {
     this.init();
@@ -24,11 +25,14 @@ export class QueueManager {
   }
 
   async fetchState() {
+    if (this.#isFetching) return;
+
+    this.#isFetching = true;
     try {
       const response = await fetch(`${APP_CONFIG.apiUrl}?action=get_state`, { cache: 'no-store' });
       const result = await response.json();
 
-      if (!response.ok || !result.success) {
+      if (!response.ok || !result.success || !Array.isArray(result.data)) {
         throw new Error(result.message || 'Failed to load queue state');
       }
 
@@ -38,6 +42,8 @@ export class QueueManager {
     } catch (error) {
       console.error('Failed to fetch queue state:', error);
       this.#setSyncStatus('PostgreSQL disconnected');
+    } finally {
+      this.#isFetching = false;
     }
   }
 
@@ -103,7 +109,7 @@ export class QueueManager {
     listener('Connecting to PostgreSQL');
   }
 
-  async createTicket({ lane, studentName, service, payment, discount }) {
+  async createTicket({ lane, studentId, studentName, service, payment, discount }) {
     try {
       const response = await fetch(APP_CONFIG.apiUrl, {
         method: 'POST',
@@ -111,6 +117,7 @@ export class QueueManager {
         body: JSON.stringify({
           action: 'create_ticket',
           lane,
+          studentId,
           studentName,
           service,
           payment,
@@ -182,22 +189,18 @@ export class QueueManager {
   }
 
   async #updateTicketStatus(ticketId, status) {
-    try {
-      const response = await fetch(APP_CONFIG.apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'update_status',
-          ticket_id: ticketId,
-          status: status
-        })
-      });
-      const result = await response.json();
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || 'Failed to update ticket status');
-      }
-    } catch (error) {
-      throw error;
+    const response = await fetch(APP_CONFIG.apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update_status',
+        ticket_id: ticketId,
+        status: status
+      })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to update ticket status');
     }
   }
 

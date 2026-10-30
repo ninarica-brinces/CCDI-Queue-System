@@ -654,7 +654,6 @@
     <div class="brand" onclick="switchView('homeView')">
       <div class="logo-circle">
 
-```
     <!-- High-definition, fully vector-traced CCDI Logo -->
     <svg viewBox="0 0 200 200" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -709,7 +708,6 @@
     🏠 Home
   </button>
 </div>
-```
 
   </header>
 
@@ -718,7 +716,6 @@
   <main id="homeView" class="view-section active">
     <div class="hero-container">
 
-```
   <h1 class="hero-title">
     Welcome to the CCDI Cashier Recording Queue System
   </h1>
@@ -760,7 +757,6 @@
 
   </div>
 </div>
-```
 
   </main>
 
@@ -768,7 +764,6 @@
 
   <main id="studentView" class="view-section">
 
-```
 <div class="student-layout">
 
   <!-- Column 1: Student Information -->
@@ -1258,7 +1253,6 @@
   </div>
 
 </div>
-```
 
   </main>
 
@@ -1266,7 +1260,6 @@
 
   <main id="cashierView" class="view-section">
 
-```
 <div class="cashier-layout">
 
   <div>
@@ -1480,7 +1473,6 @@
   </div>
 
 </div>
-```
 
   </main>
 
@@ -1491,7 +1483,6 @@
     id="studentModal"
   >
 
-```
 <div class="modal-box">
 
   <div
@@ -1516,16 +1507,20 @@
   <div class="form-group">
 
     <label>
-      Student ID Number
+      Student ID or Name
     </label>
 
     <input
       type="text"
       id="modalStudId"
       class="form-control"
-      placeholder="e.g. 2024-1011"
+      placeholder="Type a student ID or name"
       autofocus
+      autocomplete="off"
+      aria-controls="loginStudentSuggestions"
+      aria-autocomplete="list"
     >
+    <div id="loginStudentSuggestions" class="student-search-results" role="listbox" hidden></div>
 
   </div>
 
@@ -1546,7 +1541,6 @@
   </button>
 
 </div>
-```
 
   </div>
 
@@ -1557,7 +1551,6 @@
     id="cashierModal"
   >
 
-```
 <div class="modal-box">
 
   <div
@@ -1627,7 +1620,6 @@
   </button>
 
 </div>
-```
 
   </div>
 
@@ -1641,6 +1633,8 @@
     let completedCount = 0;
     let remoteTickets = [];
     let apiConnected = false;
+    let isRefreshingQueue = false;
+    window.selectedStudentProfile = null;
 
 
     /* =========================================
@@ -1678,6 +1672,9 @@
     }
 
     async function refreshQueueState() {
+      if (isRefreshingQueue) return;
+      isRefreshingQueue = true;
+
       try {
         const response = await fetch('./api.php?action=get_state', { cache: 'no-store' });
         const result = await response.json();
@@ -1695,9 +1692,10 @@
       } catch (error) {
         apiConnected = false;
         console.error('Failed to sync with the shared queue:', error);
+      } finally {
+        isRefreshingQueue = false;
+        updateUI();
       }
-
-      updateUI();
     }
 
 
@@ -1864,6 +1862,10 @@
         toggleRelationField(false);
       }
 
+      const selectedProfile = window.selectedStudentProfile;
+      if (selectedProfile && selectedProfile.student_id === idInput) {
+        populateStudentProfile(selectedProfile);
+      }
 
       activeStudentId = idInput;
 
@@ -1882,6 +1884,29 @@
         'studentView'
       );
     }
+
+    function populateStudentProfile(student) {
+      document.getElementById('studName').value = student.full_name;
+      document.getElementById('studAddress').value = student.address;
+
+      const courseAliases = {
+        BSIT: 'BS Information Technology',
+        BSCS: 'BS Computer Science'
+      };
+      const courseSelect = document.getElementById('studCourse');
+      const courseValue = courseAliases[student.course] || student.course;
+      if (![...courseSelect.options].some(option => option.value === courseValue)) {
+        courseSelect.add(new Option(courseValue, courseValue));
+      }
+      courseSelect.value = courseValue;
+
+      const yearSelect = document.getElementById('studYear');
+      const yearValue = `${student.year_level}${['st', 'nd', 'rd'][student.year_level - 1] || 'th'} Year`;
+      if ([...yearSelect.options].some(option => option.value === yearValue)) {
+        yearSelect.value = yearValue;
+      }
+    }
+    window.populateStudentProfile = populateStudentProfile;
 
 
     /* =========================================
@@ -2992,7 +3017,20 @@ refreshQueueState();
 
   </script>
 
+  <script type="module">
+    import { setupStudentSearch } from './studentSearch.js';
+
+    const searchInput = document.getElementById('modalStudId');
+    const suggestions = document.getElementById('loginStudentSuggestions');
+    setupStudentSearch(searchInput, suggestions, student => {
+      window.selectedStudentProfile = student;
+      window.populateStudentProfile(student);
+    });
+    searchInput.addEventListener('input', () => {
+      if (searchInput.value.trim() !== window.selectedStudentProfile?.student_id) {
+        window.selectedStudentProfile = null;
+      }
+    });
+  </script>
 </body>
 </html>
-
-Close

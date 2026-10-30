@@ -26,6 +26,10 @@ $port = $port !== false && $port !== '' ? $port : '5432';
 $dbname = $dbname !== false && $dbname !== '' ? $dbname : 'postgres';
 $sslmode = $sslmode !== false && $sslmode !== '' ? $sslmode : 'require';
 
+if (filter_var($port, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65535]]) === false) {
+    throw new RuntimeException('DB_PORT must be a valid TCP port between 1 and 65535.');
+}
+
 foreach ([$host, $port, $dbname, $sslmode] as $dsnValue) {
     if (str_contains($dsnValue, ';') || str_contains($dsnValue, "\0")) {
         throw new RuntimeException('Invalid PostgreSQL connection configuration.');

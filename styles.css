@@ -534,6 +534,44 @@ td {
   background: #fff;
 }
 
+.student-search-results {
+  position: relative;
+  z-index: 5;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+}
+
+.student-search-results[hidden] {
+  display: none;
+}
+
+.student-search-option {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.student-search-option:hover,
+.student-search-option:focus {
+  background: #f0f4f9;
+}
+
+.student-search-option small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

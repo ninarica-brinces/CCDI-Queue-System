@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CCDI School Queue System</title>
+
+  <style>
+    :root {
+      --primary-blue: #1d4ed8;
+      --primary-hover: #1e40af;
+      --bg-light: #f1f5f9;
+      --card-bg: #ffffff;
+      --text-dark: #1e293b;
+      --text-muted: #64748b;
+      --border-color: #cbd5e1;
+      --success-green: #16a34a;
+      --warning-amber: #d97706;
+      --danger-red: #dc2626;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* HEADER */
+    header {
+      background-color: var(--primary-blue);
+      color: white;
+      padding: 0.8rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+    }
+
+    .logo-circle {
+      width: 48px;
+      height: 48px;
+      background: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 3px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.25);
+      flex-shrink: 0;
+    }
+
+    .logo-circle svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .brand-text h1 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .brand-text p {
+      font-size: 0.8rem;
+      opacity: 0.9;
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn-nav {
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 0.45rem 0.9rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-nav:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    /* VIEWS */
+    .view-section {
+      display: none;
+      width: 100%;
+      flex: 1;
+    }
+
+    .view-section.active {
+      display: block;
+    }
+
+    /* HOME LANDING */
+    .hero-container {
+      max-width: 950px;
+      margin: 4rem auto;
+      padding: 0 1.5rem;
+      text-align: center;
+    }
+
+    .hero-title {
+      font-size: 2.2rem;
+      color: var(--text-dark);
+      margin-bottom: 0.8rem;
+    }
+
+    .hero-subtitle {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      margin-bottom: 3rem;
+    }
+
+    .portal-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+    }
+
+    .portal-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+      transition: transform 0.2s, box-shadow 0.2s;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .portal-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+      border-color: var(--primary-blue);
+    }
+
+    .portal-icon {
+      width: 64px;
+      height: 64px;
+      background-color: #eff6ff;
+      color: var(--primary-blue);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .portal-card h2 {
+      font-size: 1.3rem;
+      margin-bottom: 0.5rem;
+      color: var(--text-dark);
+    }
+
+    .portal-card p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+      line-height: 1.4;
+    }
+
+    .btn-portal {
+      background-color: var(--primary-blue);
+      color: white;
+      padding: 0.7rem 1.5rem;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: background-color 0.2s;
+    }
+
+    .portal-card:hover .btn-portal {
+      background-color: var(--primary-hover);
+    }
+
+    /* STUDENT DASHBOARD LAYOUT */
+    .student-layout {
+      max-width: 1280px;
+      margin: 1.8rem auto;
+      padding: 0 1rem;
+      display: grid;
+      grid-template-columns: 290px 1fr 310px;
+      gap: 1.2rem;
+    }
+
+    @media (max-width: 1024px) {
+      .student-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: white;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .panel-header {
+      background: var(--primary-blue);
+      color: white;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-body {
+      padding: 1.2rem;
+    }
+
+    /* FORM STYLES */
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      margin-bottom: 0.35rem;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.65rem 0.8rem;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-control:focus {
+      border-color: var(--primary-blue);
+      box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.1);
+    }
+
+    /* SERVICE GRID */
+    .service-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 0.8rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .service-card {
+      border: 1.5px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.8rem 0.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .service-card.selected {
+      border-color: var(--primary-blue);
+      background: #eff6ff;
+      box-shadow: 0 0 0 1px var(--primary-blue);
+    }
+
+    .service-card .icon {
+      font-size: 1.2rem;
+    }
+
+    .service-card h4 {
+      font-size: 0.78rem;
+      color: var(--text-dark);
+      font-weight: 600;
+    }
+
+    /* STEP INDICATORS */
+    .step-box {
+      background: #eff6ff;
+      border-radius: 6px;
+      padding: 0.5rem 0.8rem;
+      margin-bottom: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .step-badge {
+      background: var(--primary-blue);
+      color: white;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .step-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--primary-blue);
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.8rem;
+    }
+
+    .radio-label {
+      font-size: 0.82rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      color: var(--text-dark);
+    }
+
+    /* DYNAMIC TICKET CARD */
+    .ticket-badge {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 10px;
+      padding: 1.2rem;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+
+    .ticket-badge .number {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: 1px;
+      margin: 0.3rem 0;
+    }
+
+    .info-card {
+      background: #f8fafc;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.85rem;
+      margin-bottom: 0.8rem;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      padding: 0.25rem 0;
+    }
+
+    .info-row span:last-child {
+      font-weight: 700;
+      color: var(--primary-blue);
+    }
+
+    /* RESTRICTION WARNING BOX */
+    .restriction-banner {
+      display: none;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 0.85rem;
+      margin-bottom: 1rem;
+      color: #991b1b;
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+
+    .joined-queue-mode {
+      display: none !important;
+    }
+
+    /* MODALS */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(3px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-box {
+      background: white;
+      width: 90%;
+      max-width: 400px;
+      border-radius: 12px;
+      padding: 1.8rem;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+    }
+
+    .btn-submit {
+      width: 100%;
+      background: var(--primary-blue);
+      color: white;
+      border: none;
+      padding: 0.75rem;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn-submit:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-submit:disabled {
+      cursor: not-allowed;
+    }
+
+    #relationFieldContainer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease, opacity 0.3s ease;
+      opacity: 0;
+    }
+
+    #relationFieldContainer.visible {
+      max-height: 80px;
+      opacity: 1;
+      margin-bottom: 0.8rem;
+    }
+
+    #queueStatusPanel {
+      transition: all 0.25s ease;
+    }
+
+    .joined-message {
+      display: none;
+      text-align: center;
+      margin-bottom: 1rem;
+      padding: 0.7rem;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .joined-message.visible {
+      display: block;
+    }
+
+    #queueStatusPanel.joined-status-only #ticketStatusText,
+    #queueStatusPanel.joined-status-only .queue-extra {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- HEADER NAVBAR -->
+  <header>
+    <div class="brand" onclick="switchView('homeView')">
+      <div class="logo-circle">
+        <svg viewBox="0 0 200 200" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <filter id="drop-shadow" x="-10%" y="-10%" width="120%" height="120%">
+              <feDropShadow dx="1" dy="2" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.3"/>
+            </filter>
+            <linearGradient id="blue-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#2c3e80"/>
+              <stop offset="100%" stop-color="#1d2a5c"/>
+            </linearGradient>
+            <linearGradient id="red-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#ff2a2a"/>
+              <stop offset="100%" stop-color="#b80000"/>
+            </linearGradient>
+          </defs>
+          <g filter="url(#drop-shadow)">
+            <path d="M 92,20 A 75,75 0 1,0 92,170 L 92,142 A 47,47 0 1,1 92,48 Z" fill="url(#blue-grad)"/>
+            <path d="M 92,48 A 47,47 0 0,0 52,95 A 47,47 0 0,0 92,142 L 92,120 A 25,25 0 0,1 70,95 A 25,25 0 0,1 92,70 Z" fill="url(#blue-grad)"/>
+            <path d="M 100,20 L 100,170 A 75,75 0 0,0 175,95 A 75,75 0 0,0 100,20 Z M 125,50 A 45,45 0 0,1 150,95 A 45,45 0 0,1 125,140 L 125,50 Z" fill="url(#blue-grad)"/>
+            <circle cx="132" cy="74" r="13" fill="url(#red-grad)"/>
+            <path d="M 122,96 L 142,96 L 142,168 Q 142,176 150,178 L 114,178 Q 122,176 122,168 Z" fill="url(#red-grad)"/>
+          </g>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>CCDI Cashier Recording Queue System</h1>
+        <p id="portalSubHeader">Main Portal Selection</p>
+      </div>
+    </div>
+
+    <div class="nav-actions">
+      <button class="btn-nav" onclick="switchView('homeView')">
+        🏠 Home
+      </button>
+    </div>
+  </header>
+
+
+  <!-- VIEW 1: HOME SELECTION -->
+  <main id="homeView" class="view-section active">
+    <div class="hero-container">
+      <h1 class="hero-title">
+        Welcome to the CCDI Cashier Recording Queue System
+      </h1>
+      <p class="hero-subtitle">
+        Please select your portal to proceed with transaction queuing
+      </p>
+      <div class="portal-grid">
+        <div class="portal-card" onclick="openStudentModal()">
+          <div class="portal-icon">👨‍🎓</div>
+          <h2>Student Portal</h2>
+          <p>Request cashier services, join the queue, and view real-time queue status.</p>
+          <span class="btn-portal">Enter Student Portal</span>
+        </div>
+
+        <div class="portal-card" onclick="openCashierModal()">
+          <div class="portal-icon">💳</div>
+          <h2>Cashier Portal</h2>
+          <p>Staff terminal to call active tickets, process payments, and manage overall queue flow.</p>
+          <span class="btn-portal" style="background-color: #64748b;">Staff Access</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+
+  <!-- VIEW 2: STUDENT PORTAL -->
+  <main id="studentView" class="view-section">
+    <div class="student-layout">
+      <!-- Column 1: Student Information -->
+      <div class="panel" id="studentInfoPanel">
+        <div class="panel-header">👤 Student Information</div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label>Student ID</label>
+            <input type="text" id="studIdDisplay" class="form-control" readonly style="background:#f1f5f9; font-weight:600;">
+          </div>
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="studName" class="form-control" placeholder="Enter full name">
+          </div>
+          <div class="form-group">
+            <label>Address</label>
+            <input type="text" id="studAddress" class="form-control" placeholder="Enter address">
+          </div>
+          <div class="form-group">
+            <label>Course / Program</label>
+            <select id="studCourse" class="form-control">
+              <option value="">Select Course</option>
+              <option value="BS Computer Science">BS Computer Science</option>
+              <option value="BS Information Technology">BS Information Technology</option>
+              <option value="BS Information System">BS Information System</option>
+              <option value="BS Engineering Technology">BS Engineering Technology</option>
+              <option value="Associate in Computer Technology">Associate in Computer Technology</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Year Level</label>
+            <select id="studYear" class="form-control">
+              <option value="">Select Year</option>
+              <option value="1st Year">1st Year</option>
+              <option value="2nd Year">2nd Year</option>
+              <option value="3rd Year">3rd Year</option>
+              <option value="4th Year">4th Year</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Column 2: Payment Request -->
+      <div class="panel" id="paymentRequestPanel">
+        <div class="panel-header">💳 Payment Request</div>
+        <div class="panel-body">
+          <div class="step-box">
+            <div class="step-badge">1</div>
+            <div class="step-title">Select Service</div>
+          </div>
+          <div class="service-grid">
+            <div class="service-card selected" onclick="selectService(this, 'Tuition Payment')">
+              <div class="icon">🎓</div>
+              <h4>Tuition Payment</h4>
+            </div>
+            <div class="service-card" onclick="selectService(this, 'Certificate of Enrollment')">
+              <div class="icon">📄</div>
+              <h4>Certificate of Enrollment</h4>
+            </div>
+            <div class="service-card" onclick="selectService(this, 'Certificate of Registration')">
+              <div class="icon">📋</div>
+              <h4>Certificate of Registration</h4>
+            </div>
+            <div class="service-card" onclick="selectService(this, 'Other School Documents')">
+              <div class="icon">📁</div>
+              <h4>Other School Documents</h4>
+            </div>
+            <div class="service-card" onclick="selectService(this, 'Other School Fees')">
+              <div class="icon">💳</div>
+              <h4>Other School Fees</h4>
+            </div>
+          </div>
+
+          <div class="step-box">
+            <div class="step-badge">2</div>
+            <div class="step-title">Payment Details</div>
+          </div>
+
+          <div style="margin-bottom: 0.8rem;">
+            <label style="font-size:0.78rem; font-weight:700; display:block; margin-bottom:0.35rem;">Payment Period</label>
+            <div class="radio-group">
+              <label class="radio-label"><input type="radio" name="period" value="Prelim" checked> Prelim</label>
+              <label class="radio-label"><input type="radio" name="period" value="Midterm"> Midterm</label>
+              <label class="radio-label"><input type="radio" name="period" value="Pre-Final"> Pre-Final</label>
+              <label class="radio-label"><input type="radio" name="period" value="Final"> Final</label>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 0.8rem;">
+            <label style="font-size:0.78rem; font-weight:700; display:block; margin-bottom:0.35rem;">Payment Type</label>
+            <div class="radio-group">
+              <label class="radio-label"><input type="radio" name="payType" value="Full Payment"> Full Payment</label>
+              <label class="radio-label"><input type="radio" name="payType" value="Partial Payment" checked> Partial Payment</label>
+              <label class="radio-label"><input type="radio" name="payType" value="Promissory"> Promissory</label>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1.2rem;">
+            <label>Payment Percentage</label>
+            <select id="payPercentage" class="form-control">
+              <option value="50%">50%</option>
+              <option value="100%">100%</option>
+              <option value="Custom">Custom Amount</option>
+            </select>
+          </div>
+
+          <div class="step-box">
+            <div class="step-badge">3</div>
+            <div class="step-title">Priority Lane</div>
+          </div>
+
+          <div class="radio-group" style="margin-bottom: 0.8rem;">
+            <label class="radio-label">
+              <input type="radio" name="priorityLane" value="Regular" checked onclick="toggleRelationField(false)"> Regular Lane
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="priorityLane" value="Parent/Guardian" onclick="toggleRelationField(true)"> Parent/Guardian
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="priorityLane" value="PWD / Senior" onclick="toggleRelationField(false)"> PWD / Senior
+            </label>
+          </div>
+
+          <!-- Relation Question Field -->
+          <div id="relationFieldContainer">
+            <div class="form-group">
+              <label>What is your relation?</label>
+              <input type="text" id="parentRelation" class="form-control" placeholder="e.g. Mother, Father, Guardian">
+            </div>
+          </div>
+
+          <!-- Active Ticket Restriction Warning -->
+          <div id="restrictionBanner" class="restriction-banner">
+            ⚠️ <strong>Active Ticket Exists!</strong> Student ID <span id="restrictedIdSpan"></span> already has an active queue ticket. You cannot join the queue again until your current transaction is completed or cleared.
+          </div>
+
+          <!-- JOINED QUEUE MESSAGE -->
+          <div id="joinedMessage" class="joined-message">✓ JOINED QUEUE</div>
+
+          <!-- JOIN QUEUE BUTTON -->
+          <button id="btnGenerateTicket" class="btn-submit" onclick="generateTicket()" style="padding: 0.85rem;" disabled>
+            🎫 JOIN QUEUE
+          </button>
+        </div>
+      </div>
+
+      <!-- Column 3: Live Queue Status -->
+      <div class="panel" id="queueStatusPanel">
+        <div class="panel-header" style="background:#16a34a;">✅ Your Queue Number</div>
+        <div class="panel-body">
+          <div class="ticket-badge">
+            <div class="number" id="ticketNumberDisplay">---</div>
+            <p id="ticketStatusText" style="font-size:0.78rem; color: var(--text-muted);">Please wait for your number to be called.</p>
+          </div>
+          <div class="info-card">
+            <div style="font-size: 0.82rem; font-weight:700; margin-bottom: 0.4rem; color:var(--text-dark);">📢 Queue Information</div>
+            <div class="info-row">
+              <span>Now Serving</span>
+              <span id="nowServingDisplay">A-000</span>
+            </div>
+            <div class="info-row queue-extra">
+              <span>People Ahead</span>
+              <span id="peopleAheadDisplay">0</span>
+            </div>
+          </div>
+          <div class="info-card queue-extra" style="background: #fffbeb; border-color: #fde68a;">
+            <div style="font-size: 0.8rem; font-weight: 700; color: var(--warning-amber); margin-bottom: 0.3rem;">⚠️ Important Reminder</div>
+            <p style="font-size: 0.75rem; color: #78350f; line-height: 1.4;">Please keep this queue number. Present it to the cashier counter when your number is called on screen.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+
+  <!-- STUDENT LOGIN MODAL -->
+  <div class="modal-overlay" id="studentModal">
+    <div class="modal-box">
+      <div style="text-align:center; margin-bottom: 1.2rem;">
+        <h3 style="font-size: 1.2rem; color: var(--text-dark);">Student Login</h3>
+        <p style="font-size:0.82rem; color: var(--text-muted); margin-top:4px;">Enter your Student ID to enter the portal</p>
+      </div>
+      <div class="form-group">
+        <label>Student ID Number</label>
+        <input type="text" id="modalStudId" class="form-control" placeholder="e.g. 2024-1011" autofocus>
+      </div>
+      <button class="btn-submit" onclick="loginStudent()">Proceed to Student Portal</button>
+      <button onclick="closeModal('studentModal')" style="width:100%; margin-top:8px; background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.82rem;">Cancel</button>
+    </div>
+  </div>
+
+
+  <!-- CASHIER LOGIN MODAL (AUTH PRESERVED WITH REDIRECT) -->
+  <div class="modal-overlay" id="cashierModal">
+    <div class="modal-box">
+      <div style="text-align:center; margin-bottom: 1.2rem;">
+        <h3 style="font-size: 1.2rem; color: var(--text-dark);">Cashier Terminal Access</h3>
+        <p style="font-size:0.82rem; color: var(--text-muted); margin-top:4px;">Authorized staff login</p>
+      </div>
+      <div class="form-group">
+        <label>Passcode</label>
+        <input type="password" id="cashierPasscode" class="form-control" placeholder="Enter passcode (1234)">
+      </div>
+      <button class="btn-submit" onclick="loginCashier()">Access Cashier Terminal</button>
+      <button onclick="closeModal('cashierModal')" style="width:100%; margin-top:8px; background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.82rem;">Cancel</button>
+    </div>
+  </div>
+
+
+  <!-- SCRIPTS -->
+  <script>
+    let currentService = "Tuition Payment";
+    let activeStudentId = "";
+    let currentlyServing = null;
+
+    function checkDailyReset() {
+      const today = new Date().toDateString();
+      const lastSavedDate = localStorage.getItem('ccdi_queue_date');
+      if (lastSavedDate !== today) {
+        localStorage.setItem('ccdi_queue_date', today);
+        localStorage.setItem('ccdi_counter_A', '0');
+        localStorage.setItem('ccdi_counter_P', '0');
+        localStorage.setItem('ccdi_queue_list', JSON.stringify([]));
+      }
+    }
+    checkDailyReset();
+
+    function getNextNumber(prefix) {
+      checkDailyReset();
+      const key = prefix === 'P' ? 'ccdi_counter_P' : 'ccdi_counter_A';
+      let currentNum = parseInt(localStorage.getItem(key) || '0', 10);
+      currentNum = currentNum >= 100 ? 1 : currentNum + 1;
+      localStorage.setItem(key, currentNum.toString());
+      return `${prefix}-${String(currentNum).padStart(3, '0')}`;
+    }
+
+    function getQueueList() {
+      checkDailyReset();
+      return JSON.parse(localStorage.getItem('ccdi_queue_list') || '[]');
+    }
+
+    function saveQueueList(list) {
+      localStorage.setItem('ccdi_queue_list', JSON.stringify(list));
+      updateUI();
+    }
+
+    function switchView(viewId) {
+      document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+      document.getElementById(viewId).classList.add('active');
+      const subHeader = document.getElementById('portalSubHeader');
+      if (viewId === 'studentView') {
+        subHeader.innerText = "Student Portal";
+      } else {
+        subHeader.innerText = "Main Portal Selection";
+      }
+      updateUI();
+    }
+
+    function openStudentModal() {
+      document.getElementById('studentModal').classList.add('open');
+    }
+
+    function openCashierModal() {
+      document.getElementById('cashierModal').classList.add('open');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('open');
+    }
+
+    function toggleRelationField(show) {
+      const container = document.getElementById('relationFieldContainer');
+      if (show) {
+        container.classList.add('visible');
+      } else {
+        container.classList.remove('visible');
+      }
+      updateJoinButtonState();
+    }
+
+    function loginStudent() {
+      const idInput = document.getElementById('modalStudId').value.trim();
+      if (!idInput) {
+        alert("Please enter a valid Student ID.");
+        return;
+      }
+      activeStudentId = idInput;
+      document.getElementById('studIdDisplay').value = idInput;
+      closeModal('studentModal');
+      switchView('studentView');
+    }
+
+    /* AUTHENTICATION PRESERVED: DUMIREKTA NA SA index.html */
+    function loginCashier() {
+      const pass = document.getElementById('cashierPasscode').value;
+      if (pass === "1234" || pass === "") {
+        closeModal('cashierModal');
+        // Ibinabato na nito nang tuluyan papunta sa iyong index.html cashier portal
+        window.location.href = "index.html";[cite, 5]
+      } else {
+        alert("Incorrect passcode. Try '1234'.");
+      }
+    }
+
+    function selectService(card, serviceName) {
+      document.querySelectorAll('.service-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      currentService = serviceName;
+      updateJoinButtonState();
+    }
+
+    function setJoinedQueueMode(joined) {
+      const studentInfoPanel = document.getElementById('studentInfoPanel');
+      const paymentRequestPanel = document.getElementById('paymentRequestPanel');
+      const joinedMessage = document.getElementById('joinedMessage');
+      const queueStatusPanel = document.getElementById('queueStatusPanel');
+
+      if (joined) {
+        studentInfoPanel.classList.add('joined-queue-mode');
+        paymentRequestPanel.classList.add('joined-queue-mode');
+        joinedMessage.classList.add('visible');
+        queueStatusPanel.classList.add('joined-status-only');
+      } else {
+        studentInfoPanel.classList.remove('joined-queue-mode');
+        paymentRequestPanel.classList.remove('joined-queue-mode');
+        joinedMessage.classList.remove('visible');
+        queueStatusPanel.classList.remove('joined-status-only');
+      }
+    }
+
+    function isJoinFormComplete() {
+      const studId = activeStudentId || document.getElementById('studIdDisplay').value.trim();
+      const studName = document.getElementById('studName').value.trim();
+      const studAddress = document.getElementById('studAddress').value.trim();
+      const studCourse = document.getElementById('studCourse').value;
+      const studYear = document.getElementById('studYear').value;
+      const periodInput = document.querySelector('input[name="period"]:checked');
+      const payTypeInput = document.querySelector('input[name="payType"]:checked');
+      const payPercentage = document.getElementById('payPercentage').value;
+      const laneInput = document.querySelector('input[name="priorityLane"]:checked');
+      const relation = document.getElementById('parentRelation').value.trim();
+
+      if (!studId || !studName || !studAddress || !studCourse || !studYear || !currentService || !periodInput || !payTypeInput || !payPercentage || !laneInput) {
+        return false;
+      }
+      if (laneInput.value === 'Parent/Guardian' && !relation) {
+        return false;
+      }
+      return true;
+    }
+
+    function updateJoinButtonState() {
+      const btnGen = document.getElementById('btnGenerateTicket');
+      if (!btnGen) return;
+
+      const list = getQueueList();
+      const studId = activeStudentId;
+      const hasActiveTicket = list.some(t => t.studentId === studId) || (currentlyServing && currentlyServing.studentId === studId);
+
+      if (hasActiveTicket) {
+        btnGen.disabled = true;
+        btnGen.style.opacity = "0.5";
+        btnGen.style.cursor = "not-allowed";
+        return;
+      }
+
+      const complete = isJoinFormComplete();
+      btnGen.disabled = !complete;
+      btnGen.style.opacity = complete ? "1" : "0.5";
+      btnGen.style.cursor = complete ? "pointer" : "not-allowed";
+    }
+
+    function generateTicket() {
+      const studId = activeStudentId || document.getElementById('studIdDisplay').value.trim();
+      if (!studId) {
+        alert("Please login with your Student ID first.");
+        return;
+      }
+
+      const studName = document.getElementById('studName').value.trim();
+      const studAddress = document.getElementById('studAddress').value.trim();
+      const studCourse = document.getElementById('studCourse').value;
+      const studYear = document.getElementById('studYear').value;
+      const periodInput = document.querySelector('input[name="period"]:checked');
+      const payTypeInput = document.querySelector('input[name="payType"]:checked');
+      const payPercentage = document.getElementById('payPercentage').value;
+      const laneInput = document.querySelector('input[name="priorityLane"]:checked');
+      const relation = document.getElementById('parentRelation').value.trim();
+
+      if (!studName || !studAddress || !studCourse || !studYear || !currentService || !periodInput || !payTypeInput || !payPercentage || !laneInput) {
+        alert("Please fill out all required fields before joining the queue.");
+        return;
+      }
+
+      const lane = laneInput.value;
+      if (lane === 'Parent/Guardian' && !relation) {
+        alert("Please enter your relation to the student.");
+        return;
+      }
+
+      const queueList = getQueueList();
+      const existingInQueue = queueList.find(t => t.studentId === studId);
+
+      if (existingInQueue) {
+        alert(`Restriction: Student ID ${studId} already has an active queue ticket!`);
+        return;
+      }
+
+      const prefix = lane.includes('PWD') ? 'P' : 'A';
+      const ticketNum = getNextNumber(prefix);
+      let detailTag = lane;
+      if (lane === 'Parent/Guardian') {
+        detailTag = `Parent (${relation})`;
+      }
+
+      const newTicket = {
+        number: ticketNum,
+        studentId: studId,
+        name: studName,
+        address: studAddress,
+        course: studCourse,
+        year: studYear,
+        service: currentService,
+        period: periodInput.value,
+        paymentType: payTypeInput.value,
+        paymentPercentage: payPercentage,
+        priority: lane,
+        detail: detailTag,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      queueList.push(newTicket);
+      saveQueueList(queueList);
+
+      document.getElementById('btnGenerateTicket').innerText = "✓ JOINED QUEUE";
+      setJoinedQueueMode(true);
+      updateUI();
+    }
+
+    function updateUI() {
+      const list = getQueueList();
+      const studId = activeStudentId;
+      const myQueueTicket = list.find(t => t.studentId === studId);
+      const btnGen = document.getElementById('btnGenerateTicket');
+      const restBanner = document.getElementById('restrictionBanner');
+      const restIdSpan = document.getElementById('restrictedIdSpan');
+
+      if (myQueueTicket) {
+        setJoinedQueueMode(true);
+        btnGen.disabled = true;
+        btnGen.style.opacity = "0.5";
+        btnGen.style.cursor = "not-allowed";
+        btnGen.innerText = "✓ JOINED QUEUE";
+        restBanner.style.display = "block";
+        restIdSpan.innerText = studId;
+        document.getElementById('ticketNumberDisplay').innerText = myQueueTicket.number;
+
+        const aheadCount = list.findIndex(t => t.studentId === studId);
+        document.getElementById('ticketStatusText').innerText = "Please wait for your number to be called.";
+        document.getElementById('peopleAheadDisplay').innerText = aheadCount;
+      } else {
+        setJoinedQueueMode(false);
+        updateJoinButtonState();
+        btnGen.innerText = "🎫 JOIN QUEUE";
+        restBanner.style.display = "none";
+        document.getElementById('ticketNumberDisplay').innerText = "---";
+        document.getElementById('ticketStatusText').innerText = "Click 'JOIN QUEUE' above";
+        document.getElementById('peopleAheadDisplay').innerText = "0";
+      }
+
+      document.getElementById('nowServingDisplay').innerText = list.length > 0 ? "A-001" : "A-000";
+    }
+
+    setInterval(updateUI, 1500);
+
+    document.querySelectorAll('#studentView input, #studentView select').forEach(field => {
+      field.addEventListener('input', updateJoinButtonState);
+      field.addEventListener('change', updateJoinButtonState);
+    });
+
+    updateUI();
+  </script>
+
+</body>
+</html>

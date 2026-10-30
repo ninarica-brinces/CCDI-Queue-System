@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CCDI School Cashier Queue System</title>
+  
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- SIDEBAR NAVIGATION -->
+  <aside>
+    <div>
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">
+          <i class="fa-solid fa-graduation-cap"></i>
+        </div>
+        <div class="brand-title">CCDI Cashier Recording<br>Queue System</div>
+      </div>
+      <nav aria-label="Main Navigation">
+        <ul class="nav-menu">
+          <li class="nav-item">
+            <a href="#" id="navQueue" class="nav-link active"><i class="fa-solid fa-users-line"></i> Queue Management</a>
+          </li>
+          <li class="nav-item">
+            <a href="#" id="navTransactions" class="nav-link"><i class="fa-solid fa-receipt"></i> Transactions</a>
+          </li>
+          <li class="nav-item">
+            <a href="#" id="navReports" class="nav-link"><i class="fa-solid fa-chart-column"></i> Reports</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+    
+    <div class="sidebar-footer">
+      <div><i class="fa-regular fa-calendar-days"></i> System Clock</div>
+      <div id="liveClock" class="clock-display">--:--:--</div>
+      <div class="user-display">Cashier Portal Active</div>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main>
+    <!-- PAGE 1: QUEUE MANAGEMENT -->
+    <div id="pageQueue" class="page-view active">
+      <header>
+        <div class="header-left">
+          <h1 class="header-title">Cashier Operations Portal</h1>
+        </div>
+        <button id="openModalBtn" type="button" class="btn btn-primary">
+          <i class="fa-solid fa-plus"></i> New Queue Ticket
+        </button>
+      </header>
+
+      <div class="container">
+        <!-- KPI METRICS GRID -->
+        <section class="kpi-grid" aria-label="Queue Metrics">
+          <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
+            <div class="kpi-details">
+              <span class="title">Total Waiting</span>
+              <span class="value" id="kpiWaiting">0</span>
+              <span class="sub"><span id="kpiRegWait">0</span> Regular • <span id="kpiPrioWait">0</span> Priority</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-circle-check"></i></div>
+            <div class="kpi-details">
+              <span class="title">Currently Serving</span>
+              <span class="value" id="kpiServing">--</span>
+              <span class="sub" id="kpiServingLane">None</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-receipt"></i></div>
+            <div class="kpi-details">
+              <span class="title">Completed Today</span>
+              <span class="value" id="kpiCompleted">0</span>
+              <span class="sub">Transactions</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon"><i class="fa-solid fa-forward-step"></i></div>
+            <div class="kpi-details">
+              <span class="title">Skipped Today</span>
+              <span class="value" id="kpiSkipped">0</span>
+              <span class="sub">Transactions</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- REGULAR QUEUE SECTION -->
+        <section class="queue-section">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Now Serving <span class="muted">(Regular)</span></h2>
+            </div>
+            <div class="serving-number" id="regServingNum">--</div>
+            <div class="details-list" id="regServingDetails"></div>
+            <div class="action-btns">
+              <button id="btnRegNext" type="button" class="btn btn-primary"><i class="fa-solid fa-play"></i> Call Next</button>
+              <button id="btnRegSkip" type="button" class="btn btn-secondary"><i class="fa-solid fa-forward"></i> Skip</button>
+              <button id="btnRegRecall" type="button" class="btn btn-secondary"><i class="fa-solid fa-rotate-left"></i> Recall</button>
+              <button id="btnRegComplete" type="button" class="btn btn-success"><i class="fa-solid fa-check"></i> Complete</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Regular Queue List</h2>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Queue No.</th>
+                  <th>Student</th>
+                  <th>Service</th>
+                  <th>Payment</th>
+                  <th>Time</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="regTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- PRIORITY QUEUE SECTION -->
+        <section class="queue-section">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Now Serving <span class="muted">(Priority)</span></h2>
+            </div>
+            <div class="serving-number prio-number" id="prioServingNum">--</div>
+            <div class="details-list" id="prioServingDetails"></div>
+            <div class="action-btns">
+              <button id="btnPrioNext" type="button" class="btn btn-primary"><i class="fa-solid fa-play"></i> Call Next</button>
+              <button id="btnPrioSkip" type="button" class="btn btn-secondary"><i class="fa-solid fa-forward"></i> Skip</button>
+              <button id="btnPrioRecall" type="button" class="btn btn-secondary"><i class="fa-solid fa-rotate-left"></i> Recall</button>
+              <button id="btnPrioComplete" type="button" class="btn btn-success"><i class="fa-solid fa-check"></i> Complete</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Priority Queue List</h2>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Queue No.</th>
+                  <th>Student</th>
+                  <th>Service</th>
+                  <th>Payment</th>
+                  <th>Time</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="prioTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- PAGE 2: TRANSACTIONS -->
+    <div id="pageTransactions" class="page-view">
+      <header>
+        <div class="header-left">
+          <h1 class="header-title">Transaction History Log</h1>
+        </div>
+      </header>
+      <div class="container">
+        <div class="card">
+          <div class="toolbar">
+            <input type="text" id="txSearchInput" class="search-input" placeholder="Search by ticket ID or student name...">
+            <select id="txFilterStatus" class="filter-select">
+              <option value="ALL">All Statuses</option>
+              <option value="Completed">Completed</option>
+              <option value="Skipped">Skipped</option>
+            </select>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Ticket ID</th>
+                <th>Student Name</th>
+                <th>Lane</th>
+                <th>Service Requested</th>
+                <th>Payment Option</th>
+                <th>Issued At</th>
+                <th>Ended At</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE 3: REPORTS -->
+    <div id="pageReports" class="page-view">
+      <header>
+        <div class="header-left">
+          <h1 class="header-title">Daily Operations Analytics</h1>
+        </div>
+      </header>
+      <div class="container">
+        <div class="reports-summary-grid">
+          <div class="card stat-box">
+            <span class="stat-label">Total Issued Tickets</span>
+            <span class="stat-value" id="rptTotalTickets">0</span>
+          </div>
+          <div class="card stat-box">
+            <span class="stat-label">Service Resolution Rate</span>
+            <span class="stat-value" id="rptCompletionRate">0%</span>
+          </div>
+          <div class="card stat-box">
+            <span class="stat-label">Regular vs Priority Ratio</span>
+            <span class="stat-value" id="rptRatio">0 / 0</span>
+          </div>
+        </div>
+
+        <div class="reports-breakdown-grid">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Service Type Distribution</h2>
+            </div>
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th>Service Requested</th>
+                  <th>Count</th>
+                  <th>Percentage</th>
+                </tr>
+              </thead>
+              <tbody id="rptServicesBody"></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Payment Option Distribution</h2>
+            </div>
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th>Payment Option</th>
+                  <th>Count</th>
+                  <th>Percentage</th>
+                </tr>
+              </thead>
+              <tbody id="rptPaymentsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer-bar">
+      <span>School Cashier Queue System • Enterprise Operations Mode</span>
+      <span id="storageStatus" class="storage-status" role="status">Connected to XAMPP MySQL</span>
+      <button id="resetSystemBtn" type="button" class="btn-text-danger">Reset Operational Day</button>
+    </footer>
+  </main>
+
+  <!-- ACCESSIBLE DIALOG (MODAL) WITH AUTOCOMPLETE & DISCOUNT INPUT -->
+  <dialog id="ticketDialog" class="modal">
+    <div class="modal-content">
+      <header class="modal-header">
+        <h3>Issue New Queue Ticket</h3>
+        <button id="closeModalCross" type="button" class="close-btn" aria-label="Close dialog">&times;</button>
+      </header>
+      <form id="ticketForm">
+        <div class="form-group">
+          <label for="laneType">Lane Type</label>
+          <select id="laneType" name="laneType" required></select>
+        </div>
+        <div class="form-group">
+          <label for="studentName">Student / Client Name</label>
+          <input type="text" id="studentName" name="studentName" placeholder="Enter full name" required maxlength="60" autocomplete="off" list="studentSuggestions">
+          <datalist id="studentSuggestions"></datalist>
+        </div>
+        <div class="form-group">
+          <label for="serviceType">Service Requested</label>
+          <select id="serviceType" name="serviceType" required></select>
+        </div>
+        <div class="form-group">
+          <label for="paymentType">Payment Option</label>
+          <select id="paymentType" name="paymentType" required></select>
+        </div>
+        <div class="form-group">
+          <label for="customDiscount">Discount (% or Amount)</label>
+          <input type="text" id="customDiscount" name="customDiscount" placeholder="e.g., 20% or 100 PHP" autocomplete="off">
+        </div>
+        <footer class="modal-actions">
+          <button type="button" id="closeModalBtn" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Issue Ticket</button>
+        </footer>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- MAIN APP SCRIPT -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

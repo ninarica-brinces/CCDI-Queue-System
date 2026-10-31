@@ -8,7 +8,7 @@ from the Supabase project's PostgreSQL connection page:
 
 - `DB_HOST` (required)
 - `DB_PORT` (optional; defaults to `5432`)
-- `DB_NAME` (optional; defaults to `postgres`)
+- `DB_NAME` (required; Supabase database name, commonly `postgres`)
 - `DB_USER` (required)
 - `DB_PASSWORD` (required; keep this secret and do not commit it)
 - `DB_SSLMODE` (optional; defaults to `require`)
@@ -26,9 +26,16 @@ checks. API failures include a request ID that can be matched with Render logs.
 Set `APP_DEBUG=true` only while troubleshooting; it exposes database error
 messages in API responses and should be disabled afterward.
 
-Both portals call the same relative `api.php` endpoint. Deploy the PHP app and
-its HTML/JavaScript together as one Render web service; do not host the pages
-as a separate static site with a different API URL.
+The portal picker in `index.html` routes to the API-backed student and cashier
+pages. Both call the same relative `api.php` endpoint and therefore use the
+same server-side PDO connection. Deploy the PHP app and its HTML/JavaScript
+together as one Render web service; do not host the pages as a separate static
+site with a different API URL.
+
+Queue requests and their requested payment details are stored in
+`queue_tickets`; cashier completion updates that ticket's status. There is no
+separate payment ledger or captured amount/receipt record in the current
+schema.
 
 ## Deployment security
 

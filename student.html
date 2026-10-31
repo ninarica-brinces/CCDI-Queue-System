@@ -3044,6 +3044,10 @@ refreshQueueState();
         window.selectedStudentProfile = null;
       }
     });
+
+    const requestedPortal = new URLSearchParams(window.location.search).get('portal');
+    if (requestedPortal === 'student') window.openStudentModal();
+    if (requestedPortal === 'cashier') window.openCashierModal();
   </script>
 </body>
 </html>

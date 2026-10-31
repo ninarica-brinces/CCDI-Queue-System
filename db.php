@@ -1,10 +1,12 @@
 <?php
 $host = getenv('DB_HOST');
+$dbname = getenv('DB_NAME');
 $user = getenv('DB_USER');
 $password = getenv('DB_PASSWORD');
 
 $requiredConfig = [
     'DB_HOST' => $host,
+    'DB_NAME' => $dbname,
     'DB_USER' => $user,
     'DB_PASSWORD' => $password,
 ];
@@ -20,10 +22,8 @@ if ($missingConfig) {
 }
 
 $port = getenv('DB_PORT');
-$dbname = getenv('DB_NAME');
 $sslmode = getenv('DB_SSLMODE');
 $port = $port !== false && $port !== '' ? $port : '5432';
-$dbname = $dbname !== false && $dbname !== '' ? $dbname : 'postgres';
 $sslmode = $sslmode !== false && $sslmode !== '' ? $sslmode : 'require';
 
 if (filter_var($port, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65535]]) === false) {

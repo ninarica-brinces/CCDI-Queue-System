@@ -258,30 +258,26 @@ try {
         try {
             $conn->rollBack();
         } catch (Throwable $rollbackError) {
-            error_log("Queue API rollback failure [$requestId]: " . $rollbackError->getMessage());
+            error_log(sprintf(
+                'Queue API rollback failure [%s]: %s in %s:%d',
+                $requestId,
+                $rollbackError->getMessage(),
+                $rollbackError->getFile(),
+                $rollbackError->getLine()
+            ));
         }
     }
     error_log(sprintf(
-        'Queue API error [%s]: %s in %s:%d',
+        'Queue API error [%s] (%s): %s in %s:%d',
         $requestId,
+        get_class($error),
         $error->getMessage(),
         $error->getFile(),
         $error->getLine()
     ));
-    if ($error instanceof PDOException && $error->getCode() === '23505') {
-        respond(409, [
-            'success' => false,
-            'message' => 'An active ticket already exists for this student',
-            'request_id' => $requestId,
-        ]);
-    }
-    $payload = [
+    respond(500, [
         'success' => false,
-        'message' => "The queue service is temporarily unavailable (Reference: $requestId)",
+        'message' => "The queue service encountered a server or database error. Check server logs (Reference: $requestId)",
         'request_id' => $requestId,
-    ];
-    if (getenv('APP_DEBUG') === 'true') {
-        $payload['debug'] = $error->getMessage();
-    }
-    respond(500, $payload);
+    ]);
 }

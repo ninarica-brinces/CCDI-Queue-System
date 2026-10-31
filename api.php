@@ -40,7 +40,7 @@ try {
 
     if ($method === 'GET' && $action === 'get_state') {
         $stmt = $conn->prepare(
-            'SELECT * FROM queue_tickets WHERE service_date = ? ORDER BY created_at ASC, ticket_id ASC'
+            'SELECT * FROM public.queue_tickets WHERE service_date = ? ORDER BY created_at ASC, ticket_id ASC'
         );
         $stmt->execute([$today]);
         respond(200, ['success' => true, 'data' => $stmt->fetchAll()]);
@@ -60,7 +60,7 @@ try {
             "SELECT student_id, first_name, last_name,
                     first_name || ' ' || last_name AS full_name,
                     course, address, year_level
-             FROM ccdi_students
+             FROM public.ccdi_students
              WHERE student_id ILIKE :student_id
                 OR first_name ILIKE :first_name
                 OR last_name ILIKE :last_name
@@ -131,7 +131,7 @@ try {
             $studentLock = $conn->prepare("SELECT pg_advisory_xact_lock(hashtext(?))");
             $studentLock->execute(["student:$today:$studentId"]);
             $active = $conn->prepare(
-                "SELECT 1 FROM queue_tickets
+                "SELECT 1 FROM public.queue_tickets
                  WHERE service_date = ? AND student_id = ? AND status IN ('waiting', 'serving')
                  LIMIT 1"
             );
@@ -143,14 +143,14 @@ try {
         }
 
         $count = $conn->prepare(
-            'SELECT COUNT(*) FROM queue_tickets WHERE lane = ? AND service_date = ?'
+            'SELECT COUNT(*) FROM public.queue_tickets WHERE lane = ? AND service_date = ?'
         );
         $count->execute([$lane, $today]);
         $prefix = $lane === 'Priority' ? 'P' : 'A';
         $ticketNumber = $prefix . '-' . str_pad((string) ((int) $count->fetchColumn() + 1), 3, '0', STR_PAD_LEFT);
 
         $insert = $conn->prepare(
-            "INSERT INTO queue_tickets
+            "INSERT INTO public.queue_tickets
                 (ticket_number, lane, student_name, student_id, course, address, year_level,
                  transaction_type, payment_method, payment_period, payment_percentage, discount, notes, status, service_date)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?)
@@ -192,7 +192,7 @@ try {
         $lock->execute(["serving:$today:$lane"]);
 
         $serving = $conn->prepare(
-            "SELECT ticket_id FROM queue_tickets
+            "SELECT ticket_id FROM public.queue_tickets
              WHERE service_date = ? AND lane = ? AND status = 'serving'
              LIMIT 1"
         );
@@ -203,7 +203,7 @@ try {
         }
 
         $next = $conn->prepare(
-            "SELECT ticket_id FROM queue_tickets
+            "SELECT ticket_id FROM public.queue_tickets
              WHERE service_date = ? AND lane = ? AND status = 'waiting'
              ORDER BY created_at ASC, ticket_id ASC
              LIMIT 1"
@@ -216,7 +216,7 @@ try {
         }
 
         $update = $conn->prepare(
-            "UPDATE queue_tickets SET status = 'serving'
+            "UPDATE public.queue_tickets SET status = 'serving'
              WHERE ticket_id = ? AND status = 'waiting'
              RETURNING ticket_id, ticket_number, lane, student_name, student_id, course, address, year_level, transaction_type, payment_method, payment_period, payment_percentage, discount, notes, status, service_date, created_at, completed_at"
         );
@@ -234,7 +234,7 @@ try {
         }
 
         $stmt = $conn->prepare(
-            "UPDATE queue_tickets
+            "UPDATE public.queue_tickets
              SET status = ?, completed_at = CURRENT_TIMESTAMP
              WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
              RETURNING ticket_id"
@@ -247,7 +247,7 @@ try {
     }
 
     if ($actionType === 'reset_day') {
-        $stmt = $conn->prepare('DELETE FROM queue_tickets WHERE service_date = ?');
+        $stmt = $conn->prepare('DELETE FROM public.queue_tickets WHERE service_date = ?');
         $stmt->execute([$today]);
         respond(200, ['success' => true]);
     }
@@ -268,16 +268,22 @@ try {
         }
     }
     error_log(sprintf(
-        'Queue API error [%s] (%s): %s in %s:%d',
+        'Queue API error [%s] (%s, SQLSTATE %s): %s in %s:%d',
         $requestId,
         get_class($error),
+        (string) $error->getCode(),
         $error->getMessage(),
         $error->getFile(),
         $error->getLine()
     ));
-    respond(500, [
+    $payload = [
         'success' => false,
         'message' => "The queue service encountered a server or database error. Check server logs (Reference: $requestId)",
         'request_id' => $requestId,
-    ]);
+        'debug_error' => $error->getMessage(),
+    ];
+    if ($error instanceof PDOException && $error->getCode() !== '') {
+        $payload['sqlstate'] = (string) $error->getCode();
+    }
+    respond(500, $payload);
 }

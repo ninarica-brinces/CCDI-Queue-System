@@ -8,7 +8,7 @@ from the Supabase project's PostgreSQL connection page:
 
 - `DB_HOST` (required)
 - `DB_PORT` (optional; defaults to `5432`)
-- `DB_NAME` (required; Supabase database name, commonly `postgres`)
+- `DB_NAME` (optional; defaults to `postgres`)
 - `DB_USER` (required)
 - `DB_PASSWORD` (required; keep this secret and do not commit it)
 - `DB_SSLMODE` (optional; defaults to `require`)

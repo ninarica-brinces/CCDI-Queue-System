@@ -13,7 +13,7 @@ export class QueueManager {
   #state = structuredClone(EMPTY_STATE);
   #listeners = [];
   #statusListeners = [];
-  #isFetching = false;
+  #fetchPromise = null;
 
   constructor() {
     this.init();
@@ -25,41 +25,53 @@ export class QueueManager {
   }
 
   async fetchState(retries = 3, delay = 1000) {
-    if (this.#isFetching) return;
+    if (this.#fetchPromise) return this.#fetchPromise;
 
-    this.#isFetching = true;
+    const request = this.#fetchStateWithRetry(retries, delay);
+    this.#fetchPromise = request;
     try {
-      let currentDelay = delay;
-      for (let attempt = 0; ; attempt++) {
-        try {
-          const response = await fetch('api.php?action=get_state', { cache: 'no-store' });
-          if (!response.ok) {
-            throw new Error(`Service Unavailable: ${response.status}`);
-          }
-
-          const result = await response.json();
-          if (!result.success || !Array.isArray(result.data)) {
-            throw new Error(result.message || 'Failed to load queue state');
-          }
-
-          this.#processDatabaseTickets(result.data);
-          this.#notify();
-          this.#setSyncStatus('Connected to PostgreSQL');
-          return result;
-        } catch (error) {
-          if (attempt >= retries) {
-            console.error('Failed to fetch queue state:', error);
-            this.#setSyncStatus('PostgreSQL disconnected');
-            throw error;
-          }
-
-          this.#setSyncStatus('Reconnecting...');
-          await new Promise(resolve => setTimeout(resolve, currentDelay));
-          currentDelay *= 2;
-        }
-      }
+      return await request;
     } finally {
-      this.#isFetching = false;
+      if (this.#fetchPromise === request) this.#fetchPromise = null;
+    }
+  }
+
+  async #fetchStateWithRetry(retries, delay) {
+    let currentDelay = delay;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const response = await fetch('api.php?action=get_state', { cache: 'no-store' });
+        if (!response.ok) {
+          let message = `Service Unavailable: ${response.status}`;
+          try {
+            const errorResult = await response.json();
+            if (errorResult.message) message = errorResult.message;
+          } catch {
+            // Keep the HTTP status message when the server does not return JSON.
+          }
+          throw new Error(message);
+        }
+
+        const result = await response.json();
+        if (!result.success || !Array.isArray(result.data)) {
+          throw new Error(result.message || 'Failed to load queue state');
+        }
+
+        this.#processDatabaseTickets(result.data);
+        this.#notify();
+        this.#setSyncStatus('Connected to PostgreSQL');
+        return result;
+      } catch (error) {
+        if (attempt >= retries) {
+          console.error('Failed to fetch queue state:', error);
+          this.#setSyncStatus('PostgreSQL disconnected');
+          throw error;
+        }
+
+        this.#setSyncStatus('Reconnecting...');
+        await new Promise(resolve => setTimeout(resolve, currentDelay));
+        currentDelay *= 2;
+      }
     }
   }
 

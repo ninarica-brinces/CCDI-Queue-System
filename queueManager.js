@@ -20,28 +20,44 @@ export class QueueManager {
   }
 
   async init() {
-    await this.fetchState();
-    setInterval(() => this.fetchState(), 1500);
+    this.fetchState().catch(() => undefined);
+    setInterval(() => this.fetchState().catch(() => undefined), 1500);
   }
 
-  async fetchState() {
+  async fetchState(retries = 3, delay = 1000) {
     if (this.#isFetching) return;
 
     this.#isFetching = true;
     try {
-      const response = await fetch(`${APP_CONFIG.apiUrl}?action=get_state`, { cache: 'no-store' });
-      const result = await response.json();
+      let currentDelay = delay;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const response = await fetch('api.php?action=get_state', { cache: 'no-store' });
+          if (!response.ok) {
+            throw new Error(`Service Unavailable: ${response.status}`);
+          }
 
-      if (!response.ok || !result.success || !Array.isArray(result.data)) {
-        throw new Error(result.message || 'Failed to load queue state');
+          const result = await response.json();
+          if (!result.success || !Array.isArray(result.data)) {
+            throw new Error(result.message || 'Failed to load queue state');
+          }
+
+          this.#processDatabaseTickets(result.data);
+          this.#notify();
+          this.#setSyncStatus('Connected to PostgreSQL');
+          return result;
+        } catch (error) {
+          if (attempt >= retries) {
+            console.error('Failed to fetch queue state:', error);
+            this.#setSyncStatus('PostgreSQL disconnected');
+            throw error;
+          }
+
+          this.#setSyncStatus('Reconnecting...');
+          await new Promise(resolve => setTimeout(resolve, currentDelay));
+          currentDelay *= 2;
+        }
       }
-
-      this.#processDatabaseTickets(result.data);
-      this.#notify();
-      this.#setSyncStatus('Connected to PostgreSQL');
-    } catch (error) {
-      console.error('Failed to fetch queue state:', error);
-      this.#setSyncStatus('PostgreSQL disconnected');
     } finally {
       this.#isFetching = false;
     }
@@ -153,7 +169,7 @@ export class QueueManager {
         throw new Error(result.message || 'Failed to create ticket');
       }
 
-      await this.fetchState();
+      await this.fetchState().catch(() => undefined);
       return true;
     } catch (error) {
       console.error('Error creating ticket:', error);
@@ -178,12 +194,12 @@ export class QueueManager {
         id: result.data.ticket_number,
         lane: result.data.lane
       });
-      await this.fetchState();
+      await this.fetchState().catch(() => undefined);
       return true;
     } catch (error) {
       console.error('Failed to call next ticket:', error);
       alert(error.message || 'Failed to call next ticket');
-      await this.fetchState();
+      await this.fetchState().catch(() => undefined);
       return false;
     }
   }
@@ -205,7 +221,7 @@ export class QueueManager {
 
     try {
       await this.#updateTicketStatus(ticket.dbId, status);
-      await this.fetchState();
+      await this.fetchState().catch(() => undefined);
     } catch (error) {
       console.error('Failed to update ticket status:', error);
       alert(error.message || 'Failed to update ticket status');
@@ -250,7 +266,7 @@ export class QueueManager {
       if (!response.ok || !result.success) {
         throw new Error(result.message || 'Failed to reset queue');
       }
-      await this.fetchState();
+      await this.fetchState().catch(() => undefined);
     } catch (error) {
       console.error('Failed to reset day:', error);
       throw error;

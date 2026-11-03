@@ -42,7 +42,7 @@ export class QueueManager {
     let currentDelay = delay;
     for (let attempt = 0; ; attempt++) {
       try {
-        const response = await fetch('api.php?action=get_state', { cache: 'no-store' });
+        const response = await fetch('api.php?action=get_queue_state', { cache: 'no-store' });
         if (!response.ok) {
           let message = `Service Unavailable: ${response.status}`;
           try {

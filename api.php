@@ -261,7 +261,7 @@ try {
         respond(200, ['success' => true]);
     }
 
-    if ($method === 'GET' && $action === 'get_state') {
+    if ($method === 'GET' && in_array($action, ['get_queue_state', 'get_state'], true)) {
         $role = $_SESSION['role'] ?? '';
         if (!in_array($role, ['student', 'cashier'], true)) {
             respond(401, ['success' => false, 'message' => 'Sign in to view the queue']);

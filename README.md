@@ -16,6 +16,8 @@ the project reference):
 - `DB_PASSWORD` (required; keep this secret and do not commit it)
 - `DB_SSLMODE` (optional; defaults to `require`; retain SSL for Supabase)
 - `APP_TIMEZONE` (optional; defaults to `Asia/Manila`)
+- `CASHIER_STAFF_ID` (required; the authorized cashier staff ID)
+- `CASHIER_PASSWORD_HASH` (required; a PHP `password_hash()` result, never the plaintext password)
 
 The Docker image installs PHP's `pdo_pgsql` and `pgsql` extensions. For local
 development, set the same variables in the environment used to run PHP. The
@@ -34,6 +36,18 @@ terminal is in `cashier.html` and uses `app.js`. Both call the same relative
 Deploy the PHP app and its HTML/JavaScript together as one Render web service;
 do not host the pages as a separate static site with a different API URL.
 
+Generate the cashier password hash in a trusted PHP CLI environment and store
+the resulting hash and staff ID as server environment variables:
+
+```powershell
+php -r "echo password_hash('replace-with-a-strong-password', PASSWORD_DEFAULT), PHP_EOL;"
+```
+
+Cashier actions require server-side authorization, same-origin requests, a
+CSRF token, and sign-in. Student sign-in requires a case-insensitive,
+trimmed Student ID and registered full-name match. Sessions use HttpOnly,
+SameSite cookies and expire after 30 minutes of inactivity.
+
 Queue requests and their requested payment details are stored in
 `queue_tickets`; cashier completion updates that ticket's status. Resetting the
 operational day archives status, lane, and service totals in `daily_reports`
@@ -48,7 +62,8 @@ after a ticket leaves the active queue.
 
 ## Deployment security
 
-The current API does not authenticate callers, and the cashier passcode is
-checked in browser code only. Anyone who can reach the Render URL can read queue
-data and invoke ticket or reset actions. Add server-side authentication and
-authorization before using this deployment with real student data.
+Serve the application only over HTTPS. The API does not enable cross-origin
+access, protects cashier operations with server-side authorization, limits
+student sessions to their own identity, and omits payment details for
+non-tuition services. The cashier password hash must remain a server-side
+environment variable.

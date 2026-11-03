@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CCDI School Cashier Queue System</title>
   
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="auth-locked">
 
   <!-- SIDEBAR NAVIGATION -->
   <aside>
@@ -38,6 +38,7 @@
       <div><i class="fa-regular fa-calendar-days"></i> System Clock</div>
       <div id="liveClock" class="clock-display">--:--:--</div>
       <div class="user-display">Cashier Portal Active</div>
+      <button id="cashierLogoutBtn" type="button" class="logout-button">Sign out</button>
     </div>
   </aside>
 
@@ -80,7 +81,7 @@
             <div class="kpi-details">
               <span class="title">Completed Today</span>
               <span class="value" id="kpiCompleted">0</span>
-              <span class="sub">Transactions</span>
+              <span class="sub">Tickets</span>
             </div>
           </div>
 
@@ -89,7 +90,7 @@
             <div class="kpi-details">
               <span class="title">Skipped Today</span>
               <span class="value" id="kpiSkipped">0</span>
-              <span class="sub">Transactions</span>
+              <span class="sub">Tickets</span>
             </div>
           </div>
         </section>
@@ -244,9 +245,9 @@
             </table>
           </div>
 
-          <div class="card">
+          <div class="card" id="paymentSummary" hidden>
             <div class="card-header">
-              <h2 class="card-title">Payment Option Distribution (Tuition / Active Tickets)</h2>
+              <h2 class="card-title">Tuition Payment Option Distribution</h2>
             </div>
             <table class="report-table">
               <thead>
@@ -284,31 +285,55 @@
         </div>
         <div class="form-group">
           <label for="studentId">Student ID</label>
-          <input type="text" id="studentId" name="studentId" placeholder="Enter CCDI Student ID" maxlength="64" autocomplete="off" aria-required="true">
+          <input type="text" id="studentId" name="studentId" placeholder="Enter CCDI Student ID" maxlength="64" aria-required="true">
         </div>
         <div class="form-group">
           <label for="studentName">Student Name</label>
-          <input type="text" id="studentName" name="studentName" placeholder="Enter full name" maxlength="120" autocomplete="off" aria-required="true">
+          <input type="text" id="studentName" name="studentName" placeholder="Enter full name" maxlength="120" aria-required="true">
         </div>
         <div class="form-group">
           <label for="serviceType">Service Requested</label>
           <select id="serviceType" name="serviceType" required></select>
         </div>
-        <div class="form-group">
-          <label for="paymentType">Payment Option</label>
-          <select id="paymentType" name="paymentType" required></select>
-        </div>
-        <div class="form-group">
-          <label for="paymentPeriod">Payment Period</label>
-          <select id="paymentPeriod" name="paymentPeriod"></select>
-        </div>
-        <div class="form-group">
-          <label for="customDiscount">Custom Discount / Payment Percentage</label>
-          <input type="text" id="customDiscount" name="customDiscount" placeholder="Enter a percentage or amount, e.g. 20% or 100 PHP" maxlength="120" autocomplete="off">
+        <div id="tuitionPaymentFields">
+          <div class="form-group">
+            <label for="paymentType">Payment Option</label>
+            <select id="paymentType" name="paymentType"></select>
+          </div>
+          <div class="form-group">
+            <label for="paymentPeriod">Payment Period</label>
+            <select id="paymentPeriod" name="paymentPeriod"></select>
+          </div>
+          <div class="form-group">
+            <label for="customDiscount">Custom Discount / Payment Percentage</label>
+            <input type="text" id="customDiscount" name="customDiscount" placeholder="Enter a percentage or amount, e.g. 20% or 100 PHP" maxlength="120">
+          </div>
         </div>
         <footer class="modal-actions">
           <button type="button" id="closeModalBtn" class="btn btn-secondary">Cancel</button>
           <button type="submit" class="btn btn-primary">Issue Ticket</button>
+        </footer>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="cashierLoginDialog" class="modal login-modal">
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2>Cashier Sign In</h2>
+      </header>
+      <form id="cashierLoginForm" class="login-form">
+        <div class="form-group">
+          <label for="cashierLoginStaffId">Staff ID</label>
+          <input type="text" id="cashierLoginStaffId" name="staffId" required maxlength="80">
+        </div>
+        <div class="form-group">
+          <label for="cashierLoginPassword">Password</label>
+          <input type="password" id="cashierLoginPassword" name="password" required maxlength="1024">
+        </div>
+        <p id="cashierLoginMessage" class="login-message" role="alert"></p>
+        <footer class="modal-actions">
+          <button type="submit" class="btn btn-primary">Sign In</button>
         </footer>
       </form>
     </div>

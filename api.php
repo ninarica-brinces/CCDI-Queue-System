@@ -1,9 +1,24 @@
 <?php
+$requestId = bin2hex(random_bytes(8));
+$secureCookie = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+
+session_name('CCDI_QUEUE_SESSION');
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'secure' => $secureCookie,
+    'httponly' => true,
+    'samesite' => 'Strict',
+]);
+session_start();
+
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: no-referrer');
+header('X-Frame-Options: DENY');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
 
 function respond($status, $payload)
 {
@@ -12,22 +27,97 @@ function respond($status, $payload)
     exit();
 }
 
-function requestString($input, $key)
+function requestString($input, $key, $maximumLength = 500)
 {
     $value = $input[$key] ?? '';
     if (!is_string($value) && !is_numeric($value)) {
         respond(400, ['success' => false, 'message' => "Invalid value for $key"]);
     }
-    return trim((string) $value);
+
+    $value = trim((string) $value);
+    if (strlen($value) > $maximumLength) {
+        respond(400, ['success' => false, 'message' => "$key exceeds the allowed length"]);
+    }
+
+    return $value;
 }
 
-function restrictPaymentDetails($ticket)
+function verifyRequestOrigin()
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return;
+    }
+
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    $requestHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+    $originHost = strtolower((string) parse_url($origin, PHP_URL_HOST));
+    $originPort = parse_url($origin, PHP_URL_PORT);
+    $expectedHost = preg_replace('/:\d+$/', '', $requestHost);
+    $requestPort = parse_url(
+        (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http')
+            . '://' . $requestHost,
+        PHP_URL_PORT
+    );
+
+    if (
+        $origin === '' ||
+        !in_array(parse_url($origin, PHP_URL_SCHEME), ['http', 'https'], true) ||
+        $originHost !== $expectedHost ||
+        ($originPort !== null && $requestPort !== null && $originPort !== $requestPort)
+    ) {
+        respond(403, ['success' => false, 'message' => 'Request origin is not authorized']);
+    }
+}
+
+function requireRole($role, $touchActivity = true)
 {
     if (
-        ($ticket['transaction_type'] ?? '') !== 'Tuition Payment' &&
-        !in_array($ticket['status'] ?? '', ['waiting', 'serving'], true)
+        isset($_SESSION['last_activity']) &&
+        time() - (int) $_SESSION['last_activity'] > 1800
     ) {
+        $_SESSION = [];
+        session_destroy();
+        respond(401, ['success' => false, 'message' => 'Your session expired. Sign in again.']);
+    }
+    if (($_SESSION['role'] ?? '') !== $role) {
+        respond(401, ['success' => false, 'message' => 'Authentication required']);
+    }
+    if ($touchActivity) {
+        $_SESSION['last_activity'] = time();
+    }
+}
+
+function requireCsrfToken()
+{
+    $expected = $_SESSION['csrf_token'] ?? '';
+    $provided = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+    if ($expected === '' || $provided === '' || !hash_equals($expected, $provided)) {
+        respond(403, ['success' => false, 'message' => 'Your session expired. Sign in again and retry.']);
+    }
+}
+
+function issueSession($role, $identity)
+{
+    session_regenerate_id(true);
+    $_SESSION = [
+        'role' => $role,
+        'identity' => $identity,
+        'csrf_token' => bin2hex(random_bytes(32)),
+        'created_at' => time(),
+        'last_activity' => time(),
+    ];
+}
+
+function restrictTicketForRole($ticket, $role, $studentId = '')
+{
+    if (($ticket['transaction_type'] ?? '') !== 'Tuition Payment') {
         foreach (['payment_method', 'payment_period', 'payment_percentage', 'discount'] as $field) {
+            $ticket[$field] = null;
+        }
+    }
+
+    if ($role === 'student' && ($ticket['student_id'] ?? '') !== $studentId) {
+        foreach (['student_name', 'student_id', 'course', 'address', 'year_level', 'payment_method', 'payment_period', 'payment_percentage', 'discount', 'notes'] as $field) {
             $ticket[$field] = null;
         }
     }
@@ -35,134 +125,285 @@ function restrictPaymentDetails($ticket)
     return $ticket;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
-    exit();
-}
+verifyRequestOrigin();
 
-$timezone = getenv('APP_TIMEZONE');
-$requestId = 'unassigned';
+$requestTimezone = getenv('APP_TIMEZONE');
+date_default_timezone_set($requestTimezone !== false && $requestTimezone !== '' ? $requestTimezone : 'Asia/Manila');
+$today = date('Y-m-d');
+$conn = null;
 
 try {
-    $requestId = bin2hex(random_bytes(8));
-    date_default_timezone_set($timezone !== false && $timezone !== '' ? $timezone : 'Asia/Manila');
-    require_once __DIR__ . '/db.php';
-
     $method = $_SERVER['REQUEST_METHOD'];
     $action = $_GET['action'] ?? '';
-    $today = date('Y-m-d');
+
+    if ($method === 'POST') {
+        $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if ($contentLength > 16384) {
+            respond(413, ['success' => false, 'message' => 'Request body is too large']);
+        }
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($input)) {
+            respond(400, ['success' => false, 'message' => 'Request body must be valid JSON']);
+        }
+        $action = $input['action'] ?? '';
+    } elseif ($method !== 'GET') {
+        respond(405, ['success' => false, 'message' => 'Method not allowed']);
+    }
+
+    if ($method === 'POST' && $action === 'cashier_login') {
+        $staffId = requestString($input, 'staffId', 80);
+        $password = $input['password'] ?? '';
+        if (!is_string($password) || strlen($password) > 1024) {
+            respond(400, ['success' => false, 'message' => 'Invalid password']);
+        }
+        $configuredStaffId = getenv('CASHIER_STAFF_ID');
+        $configuredPasswordHash = getenv('CASHIER_PASSWORD_HASH');
+        if (!$configuredStaffId || !$configuredPasswordHash) {
+            error_log("Queue API cashier authentication is not configured [$requestId]");
+            respond(503, ['success' => false, 'message' => 'Cashier sign-in is unavailable. Configure cashier credentials on the server.']);
+        }
+        if (
+            $staffId === '' ||
+            $password === '' ||
+            !hash_equals($configuredStaffId, $staffId) ||
+            !password_verify($password, $configuredPasswordHash)
+        ) {
+            respond(401, ['success' => false, 'message' => 'Staff ID or password is incorrect']);
+        }
+
+        issueSession('cashier', ['staff_id' => $configuredStaffId]);
+        respond(200, ['success' => true, 'role' => 'cashier', 'csrf_token' => $_SESSION['csrf_token']]);
+    }
+
+    require_once __DIR__ . '/db.php';
+
+    if ($method === 'POST' && $action === 'student_login') {
+        $studentId = requestString($input, 'studentId', 64);
+        $studentName = requestString($input, 'studentName', 120);
+        if ($studentId === '' || $studentName === '') {
+            respond(403, ['success' => false, 'message' => 'Authorization failed: Student ID and full name must match a CCDI student record.']);
+        }
+
+        $student = $conn->prepare(
+            "SELECT student_id, btrim(first_name) || ' ' || btrim(last_name) AS full_name,
+                    course, address, year_level
+             FROM public.ccdi_students
+             WHERE lower(btrim(student_id)) = lower(btrim(?))
+               AND lower(btrim(first_name) || ' ' || btrim(last_name)) = lower(btrim(?))
+             LIMIT 1"
+        );
+        $student->execute([$studentId, $studentName]);
+        $profile = $student->fetch();
+        if (!$profile) {
+            respond(403, ['success' => false, 'message' => 'Authorization failed: Student ID and full name must exactly match a CCDI student record.']);
+        }
+
+        issueSession('student', ['student_id' => $profile['student_id']]);
+        respond(200, [
+            'success' => true,
+            'role' => 'student',
+            'csrf_token' => $_SESSION['csrf_token'],
+            'student' => $profile,
+        ]);
+    }
+
+    if ($method === 'GET' && $action === 'auth_status') {
+        $role = $_SESSION['role'] ?? '';
+        if (!in_array($role, ['student', 'cashier'], true)) {
+            respond(200, ['success' => true, 'authenticated' => false]);
+        }
+        if (time() - (int) ($_SESSION['last_activity'] ?? 0) > 1800) {
+            $_SESSION = [];
+            session_destroy();
+            respond(200, ['success' => true, 'authenticated' => false]);
+        }
+        $_SESSION['last_activity'] = time();
+
+        $identity = $_SESSION['identity'] ?? [];
+        $response = [
+            'success' => true,
+            'authenticated' => true,
+            'role' => $role,
+            'csrf_token' => $_SESSION['csrf_token'],
+        ];
+        if ($role === 'student') {
+            $student = $conn->prepare(
+                "SELECT student_id, btrim(first_name) || ' ' || btrim(last_name) AS full_name,
+                        course, address, year_level
+                 FROM public.ccdi_students WHERE student_id = ? LIMIT 1"
+            );
+            $student->execute([$identity['student_id'] ?? '']);
+            $profile = $student->fetch();
+            if (!$profile) {
+                session_destroy();
+                respond(401, ['success' => false, 'message' => 'Student record is no longer available. Sign in again.']);
+            }
+            $response['student'] = $profile;
+        }
+        respond(200, $response);
+    }
+
+    if ($method === 'POST' && $action === 'logout') {
+        requireCsrfToken();
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', [
+                'expires' => time() - 42000,
+                'path' => $params['path'],
+                'domain' => $params['domain'],
+                'secure' => $params['secure'],
+                'httponly' => $params['httponly'],
+                'samesite' => 'Strict',
+            ]);
+        }
+        session_destroy();
+        respond(200, ['success' => true]);
+    }
 
     if ($method === 'GET' && $action === 'get_state') {
+        $role = $_SESSION['role'] ?? '';
+        if (!in_array($role, ['student', 'cashier'], true)) {
+            respond(401, ['success' => false, 'message' => 'Sign in to view the queue']);
+        }
+        requireRole($role, false);
+        $studentId = $role === 'student' ? (string) ($_SESSION['identity']['student_id'] ?? '') : '';
         $stmt = $conn->prepare(
             'SELECT * FROM public.queue_tickets WHERE service_date = ? ORDER BY created_at ASC, ticket_id ASC'
         );
         $stmt->execute([$today]);
-        $tickets = array_map('restrictPaymentDetails', $stmt->fetchAll());
+        $tickets = array_map(
+            static fn($ticket) => restrictTicketForRole($ticket, $role, $studentId),
+            $stmt->fetchAll()
+        );
         respond(200, ['success' => true, 'data' => $tickets]);
     }
 
-    if ($method !== 'POST') {
-        respond(405, ['success' => false, 'message' => 'Method not allowed']);
+    if ($method === 'GET') {
+        respond(400, ['success' => false, 'message' => 'Unknown action']);
     }
 
-    $input = json_decode(file_get_contents('php://input'), true);
-    if (!is_array($input)) {
-        respond(400, ['success' => false, 'message' => 'Request body must be valid JSON']);
+    if ($action === 'create_ticket') {
+        if (!in_array($_SESSION['role'] ?? '', ['student', 'cashier'], true)) {
+            respond(401, ['success' => false, 'message' => 'Authentication required']);
+        }
+        requireRole($_SESSION['role']);
+        requireCsrfToken();
+    } else {
+        requireRole('cashier');
+        requireCsrfToken();
     }
 
-    $actionType = $input['action'] ?? '';
-
-    if ($actionType === 'create_ticket') {
-        $lane = requestString($input, 'lane');
-        $studentName = requestString($input, 'studentName');
-        $studentId = requestString($input, 'studentId');
-        $course = requestString($input, 'course');
-        $address = requestString($input, 'address');
-        $yearLevel = requestString($input, 'yearLevel');
-        $service = requestString($input, 'service');
-        $payment = requestString($input, 'payment');
-        $paymentPeriod = requestString($input, 'paymentPeriod');
-        $paymentPercentage = requestString($input, 'paymentPercentage');
-        $discount = requestString($input, 'discount');
-        $notes = requestString($input, 'notes');
+    if ($action === 'create_ticket') {
+        $lane = requestString($input, 'lane', 16);
+        $studentName = requestString($input, 'studentName', 120);
+        $studentId = requestString($input, 'studentId', 64);
+        $service = requestString($input, 'service', 120);
+        $payment = requestString($input, 'payment', 240);
+        $paymentPeriod = requestString($input, 'paymentPeriod', 64);
+        $paymentPercentage = requestString($input, 'paymentPercentage', 32);
+        $discount = requestString($input, 'discount', 120);
+        $notes = requestString($input, 'notes', 240);
 
         if (!in_array($lane, ['Regular', 'Priority'], true)) {
             respond(400, ['success' => false, 'message' => 'Lane must be Regular or Priority']);
         }
-        if ($studentName === '' || $studentId === '' || strlen($studentName) > 120 || strlen($studentId) > 64) {
-            respond(403, ['success' => false, 'message' => 'Authorization failed: a valid Student Name and Student ID are required and must exactly match an authorized CCDI student record.']);
+        if ($studentName === '' || $studentId === '') {
+            respond(403, ['success' => false, 'message' => 'Authorization failed: Student ID and full name are required.']);
         }
+        if ($service === '' || $payment === '') {
+            respond(400, ['success' => false, 'message' => 'Service and payment are required']);
+        }
+
         $conn->beginTransaction();
         $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
         $dailyLock->execute(["daily-operations:$today"]);
-
         $student = $conn->prepare(
-            "SELECT student_id, first_name || ' ' || last_name AS full_name, course, address, year_level
+            "SELECT student_id, btrim(first_name) || ' ' || btrim(last_name) AS full_name,
+                    course, address, year_level
              FROM public.ccdi_students
-             WHERE student_id = ? AND first_name || ' ' || last_name = ?
+             WHERE lower(btrim(student_id)) = lower(btrim(?))
+               AND lower(btrim(first_name) || ' ' || btrim(last_name)) = lower(btrim(?))
              LIMIT 1"
         );
         $student->execute([$studentId, $studentName]);
-        $authorizedStudent = $student->fetch();
-        if (!$authorizedStudent) {
+        $profile = $student->fetch();
+        if (!$profile) {
             $conn->rollBack();
-            respond(403, ['success' => false, 'message' => 'Authorization failed: Student Name and Student ID must exactly match an authorized CCDI student record.']);
-        }
-
-        $studentName = $authorizedStudent['full_name'];
-        $studentId = $authorizedStudent['student_id'];
-        $course = $authorizedStudent['course'];
-        $address = $authorizedStudent['address'];
-        $yearLevel = (string) $authorizedStudent['year_level'];
-
-        if ($service === '' || $payment === '') {
-            $conn->rollBack();
-            respond(400, ['success' => false, 'message' => 'Service and payment are required']);
+            respond(403, ['success' => false, 'message' => 'Authorization failed: Student ID and full name must exactly match a CCDI student record.']);
         }
         if (
-            strlen($service) > 120 ||
-            strlen($payment) > 240 ||
-            strlen($paymentPeriod) > 64 ||
-            strlen($paymentPercentage) > 32 ||
-            strlen($discount) > 120 ||
-            strlen($notes) > 240
+            ($_SESSION['role'] ?? '') === 'student' &&
+            !hash_equals((string) ($_SESSION['identity']['student_id'] ?? ''), (string) $profile['student_id'])
         ) {
             $conn->rollBack();
-            respond(400, ['success' => false, 'message' => 'One or more ticket fields exceed the allowed length']);
+            respond(403, ['success' => false, 'message' => 'You may only create a ticket for the student account currently signed in.']);
         }
 
-        $lock = $conn->prepare("SELECT pg_advisory_xact_lock(hashtext(?))");
-        $lock->execute(["ticket-number:$today:$lane"]);
+        if (!in_array($service, [
+            'Tuition Payment',
+            'Cert. of Enrollment',
+            'Certificate of Enrollment',
+            'Cert. of Registration',
+            'Certificate of Registration',
+            'Transcript of Records (TOR)',
+            'Student Clearance',
+            'Other School Documents',
+            'Other School Fees',
+        ], true)) {
+            $conn->rollBack();
+            respond(400, ['success' => false, 'message' => 'Select a supported service']);
+        }
+        if ($service !== 'Tuition Payment') {
+            $paymentPeriod = '';
+            $paymentPercentage = '';
+            $discount = '';
+            $payment = 'N/A (Document Only)';
+        } elseif (!in_array($payment, [
+            'Full Payment',
+            'Partial Payment (50%)',
+            'Partial Payment (25%)',
+            'Partial Payment',
+            'Promissory Note',
+            'Promissory',
+        ], true)) {
+            $conn->rollBack();
+            respond(400, ['success' => false, 'message' => 'Select a supported tuition payment option']);
+        }
 
         $studentLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
-        $studentLock->execute(["student:$today:$studentId"]);
+        $studentLock->execute(["student:$today:{$profile['student_id']}"]);
         $active = $conn->prepare(
             "SELECT 1 FROM public.queue_tickets
              WHERE service_date = ? AND student_id = ? AND status IN ('waiting', 'serving')
              LIMIT 1"
         );
-        $active->execute([$today, $studentId]);
+        $active->execute([$today, $profile['student_id']]);
         if ($active->fetchColumn()) {
             $conn->rollBack();
             respond(409, ['success' => false, 'message' => 'This student already has an active ticket today']);
         }
 
         $dailyCount = $conn->prepare(
-            'SELECT COUNT(*) FROM public.queue_tickets WHERE service_date = ?'
+            "SELECT
+                (SELECT COUNT(*) FROM public.queue_tickets WHERE service_date = ?) +
+                (SELECT COALESCE(SUM(total_tickets), 0) FROM public.daily_reports WHERE report_date = ?)"
         );
-        $dailyCount->execute([$today]);
+        $dailyCount->execute([$today, $today]);
         if ((int) $dailyCount->fetchColumn() >= 100) {
             $conn->rollBack();
             respond(409, ['success' => false, 'message' => 'The daily limit of 100 student tickets has been reached.']);
         }
 
         $count = $conn->prepare(
-            'SELECT COUNT(*) FROM public.queue_tickets WHERE lane = ? AND service_date = ?'
+            "SELECT
+                (SELECT COUNT(*) FROM public.queue_tickets WHERE lane = ? AND service_date = ?) +
+                (SELECT COALESCE(SUM(COALESCE((lane_breakdown ->> ?)::integer, 0)), 0)
+                 FROM public.daily_reports WHERE report_date = ?)"
         );
-        $count->execute([$lane, $today]);
+        $count->execute([$lane, $today, $lane, $today]);
         $prefix = $lane === 'Priority' ? 'P' : 'A';
         $ticketNumber = $prefix . '-' . str_pad((string) ((int) $count->fetchColumn() + 1), 3, '0', STR_PAD_LEFT);
-
         $insert = $conn->prepare(
             "INSERT INTO public.queue_tickets
                 (ticket_number, lane, student_name, student_id, course, address, year_level,
@@ -170,33 +411,31 @@ try {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?)
              RETURNING ticket_id"
         );
-        $insert->bindValue(1, $ticketNumber);
-        $insert->bindValue(2, $lane);
-        $insert->bindValue(3, $studentName);
-        $insert->bindValue(
-            4,
-            $studentId !== '' ? $studentId : null,
-            $studentId !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL
-        );
-        $insert->bindValue(5, $course);
-        $insert->bindValue(6, $address);
-        $insert->bindValue(7, $yearLevel);
-        $insert->bindValue(8, $service);
-        $insert->bindValue(9, $payment);
-        $insert->bindValue(10, $paymentPeriod);
-        $insert->bindValue(11, $paymentPercentage);
-        $insert->bindValue(12, $discount);
-        $insert->bindValue(13, $notes);
-        $insert->bindValue(14, $today);
-        $insert->execute();
+        $insert->execute([
+            $ticketNumber,
+            $lane,
+            $profile['full_name'],
+            $profile['student_id'],
+            $profile['course'],
+            $profile['address'],
+            $profile['year_level'],
+            $service,
+            $payment,
+            $paymentPeriod,
+            $paymentPercentage,
+            $discount,
+            $notes,
+            $today,
+        ]);
         $ticketId = (int) $insert->fetchColumn();
         $conn->commit();
-
         respond(201, ['success' => true, 'ticket_id' => $ticketId, 'ticket_number' => $ticketNumber]);
     }
 
-    if ($actionType === 'call_next') {
-        $lane = requestString($input, 'lane');
+    requireRole('cashier');
+
+    if ($action === 'call_next') {
+        $lane = requestString($input, 'lane', 16);
         if (!in_array($lane, ['Regular', 'Priority'], true)) {
             respond(400, ['success' => false, 'message' => 'Lane must be Regular or Priority']);
         }
@@ -204,25 +443,21 @@ try {
         $conn->beginTransaction();
         $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
         $dailyLock->execute(["daily-operations:$today"]);
-        $lock = $conn->prepare("SELECT pg_advisory_xact_lock(hashtext(?))");
+        $lock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
         $lock->execute(["serving:$today:$lane"]);
-
         $serving = $conn->prepare(
-            "SELECT ticket_id FROM public.queue_tickets
-             WHERE service_date = ? AND lane = ? AND status = 'serving'
-             LIMIT 1"
+            "SELECT 1 FROM public.queue_tickets
+             WHERE service_date = ? AND lane = ? AND status = 'serving' LIMIT 1"
         );
         $serving->execute([$today, $lane]);
         if ($serving->fetchColumn()) {
             $conn->rollBack();
             respond(409, ['success' => false, 'message' => 'A ticket is already being served in this lane']);
         }
-
         $next = $conn->prepare(
             "SELECT ticket_id FROM public.queue_tickets
              WHERE service_date = ? AND lane = ? AND status = 'waiting'
-             ORDER BY created_at ASC, ticket_id ASC
-             LIMIT 1"
+             ORDER BY created_at ASC, ticket_id ASC LIMIT 1"
         );
         $next->execute([$today, $lane]);
         $ticketId = $next->fetchColumn();
@@ -230,19 +465,18 @@ try {
             $conn->rollBack();
             respond(404, ['success' => false, 'message' => 'No tickets are waiting in this lane']);
         }
-
         $update = $conn->prepare(
             "UPDATE public.queue_tickets SET status = 'serving'
-             WHERE ticket_id = ? AND status = 'waiting'
-             RETURNING ticket_id, ticket_number, lane, student_name, student_id, course, address, year_level, transaction_type, payment_method, payment_period, payment_percentage, discount, notes, status, service_date, created_at, completed_at"
+             WHERE ticket_id = ? AND service_date = ? AND status = 'waiting'
+             RETURNING *"
         );
-        $update->execute([$ticketId]);
+        $update->execute([$ticketId, $today]);
         $ticket = $update->fetch();
         $conn->commit();
-        respond(200, ['success' => true, 'data' => $ticket]);
+        respond(200, ['success' => true, 'data' => restrictTicketForRole($ticket, 'cashier')]);
     }
 
-    if ($actionType === 'update_status') {
+    if ($action === 'update_status') {
         $ticketId = filter_var($input['ticket_id'] ?? null, FILTER_VALIDATE_INT);
         $status = $input['status'] ?? '';
         if (!$ticketId || !in_array($status, ['completed', 'cancelled'], true)) {
@@ -267,7 +501,7 @@ try {
         respond(200, ['success' => true]);
     }
 
-    if ($actionType === 'recall_ticket') {
+    if ($action === 'recall_ticket') {
         $ticketId = filter_var($input['ticket_id'] ?? null, FILTER_VALIDATE_INT);
         if (!$ticketId) {
             respond(400, ['success' => false, 'message' => 'A valid ticket ID is required']);
@@ -289,26 +523,24 @@ try {
                 'SELECT status, recall_count FROM public.queue_tickets WHERE ticket_id = ? AND service_date = ?'
             );
             $current->execute([$ticketId, $today]);
-            $existingTicket = $current->fetch();
+            $existing = $current->fetch();
             $conn->rollBack();
-            if (!$existingTicket) {
+            if (!$existing) {
                 respond(404, ['success' => false, 'message' => 'Ticket not found in today\'s queue']);
             }
-            if ((int) $existingTicket['recall_count'] >= 3) {
+            if ((int) $existing['recall_count'] >= 3) {
                 respond(409, ['success' => false, 'message' => 'This ticket has reached the maximum of 3 recalls.']);
             }
             respond(409, ['success' => false, 'message' => 'Only a currently serving ticket can be recalled.']);
         }
-
         $conn->commit();
         respond(200, ['success' => true, 'data' => $ticket]);
     }
 
-    if ($actionType === 'reset_day') {
+    if ($action === 'reset_day') {
         $conn->beginTransaction();
         $lock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
         $lock->execute(["daily-operations:$today"]);
-
         $archive = $conn->prepare(
             "INSERT INTO public.daily_reports
                 (report_date, total_tickets, completed_tickets, cancelled_tickets,
@@ -325,34 +557,26 @@ try {
                         SELECT jsonb_object_agg(service_name, ticket_count)
                         FROM (
                             SELECT transaction_type AS service_name, COUNT(*) AS ticket_count
-                            FROM public.queue_tickets
-                            WHERE service_date = ?
-                            GROUP BY transaction_type
+                            FROM public.queue_tickets WHERE service_date = ? GROUP BY transaction_type
                         ) AS services
                     ), '{}'::jsonb),
                     COALESCE((
                         SELECT jsonb_object_agg(lane_name, ticket_count)
                         FROM (
                             SELECT lane AS lane_name, COUNT(*) AS ticket_count
-                            FROM public.queue_tickets
-                            WHERE service_date = ?
-                            GROUP BY lane
+                            FROM public.queue_tickets WHERE service_date = ? GROUP BY lane
                         ) AS lanes
                     ), '{}'::jsonb),
                     COALESCE((
                         SELECT jsonb_object_agg(status_name, ticket_count)
                         FROM (
                             SELECT status AS status_name, COUNT(*) AS ticket_count
-                            FROM public.queue_tickets
-                            WHERE service_date = ?
-                            GROUP BY status
+                            FROM public.queue_tickets WHERE service_date = ? GROUP BY status
                         ) AS statuses
                     ), '{}'::jsonb)
-             FROM public.queue_tickets
-             WHERE service_date = ?"
+             FROM public.queue_tickets WHERE service_date = ?"
         );
         $archive->execute([$today, $today, $today, $today, $today]);
-
         $delete = $conn->prepare('DELETE FROM public.queue_tickets WHERE service_date = ?');
         $delete->execute([$today]);
         $conn->commit();
@@ -361,17 +585,11 @@ try {
 
     respond(400, ['success' => false, 'message' => 'Unknown action']);
 } catch (Throwable $error) {
-    if (isset($conn) && $conn instanceof PDO && $conn->inTransaction()) {
+    if ($conn instanceof PDO && $conn->inTransaction()) {
         try {
             $conn->rollBack();
         } catch (Throwable $rollbackError) {
-            error_log(sprintf(
-                'Queue API rollback failure [%s]: %s in %s:%d',
-                $requestId,
-                $rollbackError->getMessage(),
-                $rollbackError->getFile(),
-                $rollbackError->getLine()
-            ));
+            error_log(sprintf('Queue API rollback failure [%s]: %s', $requestId, $rollbackError->getMessage()));
         }
     }
     error_log(sprintf(
@@ -383,14 +601,9 @@ try {
         $error->getFile(),
         $error->getLine()
     ));
-    $payload = [
+    respond(500, [
         'success' => false,
-        'message' => "The queue service encountered a server or database error. Check server logs (Reference: $requestId)",
+        'message' => "The queue service encountered a server or database error. Reference: $requestId",
         'request_id' => $requestId,
-        'debug_error' => $error->getMessage(),
-    ];
-    if ($error instanceof PDOException && $error->getCode() !== '') {
-        $payload['sqlstate'] = (string) $error->getCode();
-    }
-    respond(500, $payload);
+    ]);
 }

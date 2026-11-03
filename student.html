@@ -644,9 +644,10 @@
     }
   </style>
 
+  <link rel="stylesheet" href="styles.css">
 </head>
 
-<body>
+<body class="portal-page">
 
   <!-- HEADER NAVBAR -->
 
@@ -795,8 +796,8 @@
           type="text"
           id="studName"
           class="form-control"
-          placeholder="Enter full name"
-          autocomplete="off"
+          placeholder="Verified student name"
+          readonly
         >
       </div>
 
@@ -940,11 +941,10 @@
         </div>
 
       </div>
-
-
+      <div id="tuitionPaymentDetails" hidden>
       <div class="step-box">
         <div class="step-badge">2</div>
-        <div class="step-title">Payment Details</div>
+        <div class="step-title">Tuition Payment Details</div>
       </div>
 
 
@@ -1013,26 +1013,9 @@
           Payment Percentage
         </label>
 
-        <select id="payPercentage" class="form-control">
+        <input id="payPercentage" class="form-control" type="text" maxlength="120" placeholder="Enter a percentage or amount, e.g. 15% or 500 PHP">
 
-          <option value="" selected disabled>
-            Select Payment Percentage
-          </option>
-
-          <option value="50%">
-            50%
-          </option>
-
-          <option value="100%">
-            100%
-          </option>
-
-          <option value="Custom">
-            Custom Amount
-          </option>
-
-        </select>
-
+      </div>
       </div>
 
 
@@ -1500,7 +1483,7 @@
     <p
       style="font-size:0.82rem; color: var(--text-muted); margin-top:4px;"
     >
-      Enter your Student ID to enter the portal
+      Sign in with your Student ID and registered full name
     </p>
 
   </div>
@@ -1516,9 +1499,13 @@
       class="form-control"
       placeholder="Enter your CCDI Student ID"
       autofocus
-      autocomplete="off"
     >
 
+  </div>
+
+  <div class="form-group">
+    <label for="modalStudName">Registered full name</label>
+    <input type="text" id="modalStudName" class="form-control" placeholder="Enter your full name as registered">
   </div>
 
 
@@ -1575,12 +1562,7 @@
       Staff ID Number
     </label>
 
-    <input
-      type="text"
-      id="cashierStaffId"
-      class="form-control"
-      placeholder="Enter Staff ID Number"
-    >
+    <input type="text" id="cashierStaffId" class="form-control" placeholder="Enter Staff ID Number">
 
   </div>
 
@@ -1631,6 +1613,8 @@
     let remoteTickets = [];
     let apiConnected = false;
     let isRefreshingQueue = false;
+    let csrfToken = '';
+    let queueRefreshTimer = null;
     /* =========================================
        SHARED QUEUE STATE
     ========================================= */
@@ -1681,6 +1665,19 @@
         const response = await fetch('./api.php?action=get_state', { cache: 'no-store' });
         const result = await response.json();
         if (!response.ok || !result.success || !Array.isArray(result.data)) {
+          if (response.status === 401 && activeStudentId) {
+            if (queueRefreshTimer !== null) clearInterval(queueRefreshTimer);
+            queueRefreshTimer = null;
+            activeStudentId = '';
+            csrfToken = '';
+            remoteTickets = [];
+            currentlyServing = null;
+            completedCount = 0;
+            switchView('homeView');
+            openStudentModal();
+            alert('Your student session expired. Sign in again to continue.');
+            return;
+          }
           throw new Error(result.message || 'Unable to load the shared queue');
         }
 
@@ -1821,23 +1818,35 @@
 
    
 
-      updateJoinButtonState(); function loginStudent() {
+      updateJoinButtonState();       async function loginStudent() {
 
       const idInput =
         document
           .getElementById('modalStudId')
           .value
           .trim();
+      const nameInput = document.getElementById('modalStudName').value.trim();
 
-
-      if (!idInput) {
-
-        alert(
-          "Please enter a valid Student ID."
-        );
-
+      if (!idInput || !nameInput) {
+        alert("Authorization failed: enter your Student ID and registered full name.");
         return;
       }
+
+      const loginButton = document.querySelector('#studentModal .btn-submit');
+      loginButton.disabled = true;
+      try {
+        const response = await fetch('./api.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ action: 'student_login', studentId: idInput, studentName: nameInput })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success || !result.student || !result.csrf_token) {
+          throw new Error(result.message || 'Student authorization failed.');
+        }
+        csrfToken = result.csrf_token;
+        const profile = result.student;
 
 
       /*
@@ -1876,12 +1885,25 @@
         toggleRelationField(false);
       }
 
-      activeStudentId = idInput;
-
+      activeStudentId = profile.student_id;
 
       document.getElementById(
         'studIdDisplay'
-      ).value = idInput;
+      ).value = profile.student_id;
+      document.getElementById('studName').value = profile.full_name;
+      document.getElementById('studAddress').value = profile.address;
+      const courseAliases = { BSIT: 'BS Information Technology', BSCS: 'BS Computer Science' };
+      const courseSelect = document.getElementById('studCourse');
+      const courseValue = courseAliases[profile.course] || profile.course;
+      if (![...courseSelect.options].some(option => option.value === courseValue)) {
+        courseSelect.add(new Option(courseValue, courseValue));
+      }
+      courseSelect.value = courseValue;
+      const yearSelect = document.getElementById('studYear');
+      const yearValue = `${profile.year_level}${['st', 'nd', 'rd'][profile.year_level - 1] || 'th'} Year`;
+      if ([...yearSelect.options].some(option => option.value === yearValue)) {
+        yearSelect.value = yearValue;
+      }
 
 
       closeModal(
@@ -1892,13 +1914,20 @@
       switchView(
         'studentView'
       );
+      await refreshQueueState();
+      startQueuePolling();
+      } catch (error) {
+        alert(error.message || 'Student authorization failed.');
+      } finally {
+        loginButton.disabled = false;
+      }
     }
 
     /* =========================================
        CASHIER LOGIN
     ========================================= */
 
-    function loginCashier() {
+    async function loginCashier() {
 
       const staffId =
         document.getElementById(
@@ -1939,20 +1968,25 @@
       }
 
 
-      if (pass === "1234") {
-
-        closeModal(
-          'cashierModal'
-        );
-
+      const loginButton = document.querySelector('#cashierModal .btn-submit');
+      loginButton.disabled = true;
+      try {
+        const response = await fetch('./api.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ action: 'cashier_login', staffId, password: pass })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success || !result.csrf_token) {
+          throw new Error(result.message || 'Cashier sign-in failed.');
+        }
+        closeModal('cashierModal');
         window.location.href = 'cashier.html';
-
-      } else {
-
-        alert(
-          "Incorrect password."
-        );
-
+      } catch (error) {
+        alert(error.message || 'Cashier sign-in failed.');
+      } finally {
+        loginButton.disabled = false;
       }
     }
 
@@ -1981,6 +2015,13 @@
       currentService =
         serviceName;
 
+      document.getElementById('tuitionPaymentDetails').hidden = serviceName !== 'Tuition Payment';
+      if (serviceName !== 'Tuition Payment') {
+        document.getElementById('payPercentage').value = '';
+        document.querySelectorAll('input[name="period"], input[name="payType"]').forEach(input => {
+          input.checked = false;
+        });
+      }
       updateJoinButtonState();
     }
 
@@ -2060,6 +2101,51 @@
           'joined-status-only'
         );
 
+      }
+    }
+
+    function startQueuePolling() {
+      if (queueRefreshTimer !== null) return;
+      queueRefreshTimer = setInterval(refreshQueueState, 1500);
+    }
+
+    async function restoreStudentSession() {
+      try {
+        const response = await fetch('./api.php?action=auth_status', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to verify student session');
+        }
+        if (!result.authenticated || result.role !== 'student' || !result.student || !result.csrf_token) return;
+
+        csrfToken = result.csrf_token;
+        const profile = result.student;
+        activeStudentId = profile.student_id;
+        document.getElementById('studIdDisplay').value = profile.student_id;
+        document.getElementById('studName').value = profile.full_name;
+        document.getElementById('studAddress').value = profile.address;
+        const aliases = { BSIT: 'BS Information Technology', BSCS: 'BS Computer Science' };
+        const courseSelect = document.getElementById('studCourse');
+        const courseValue = aliases[profile.course] || profile.course;
+        if (![...courseSelect.options].some(option => option.value === courseValue)) {
+          courseSelect.add(new Option(courseValue, courseValue));
+        }
+        courseSelect.value = courseValue;
+        const yearValue = `${profile.year_level}${['st', 'nd', 'rd'][profile.year_level - 1] || 'th'} Year`;
+        const yearSelect = document.getElementById('studYear');
+        if ([...yearSelect.options].some(option => option.value === yearValue)) {
+          yearSelect.value = yearValue;
+        }
+        if (new URLSearchParams(window.location.search).get('portal') === 'student') {
+          switchView('studentView');
+        }
+        await refreshQueueState();
+        startQueuePolling();
+      } catch (error) {
+        console.error('Unable to restore student session:', error);
       }
     }
 
@@ -2201,19 +2287,19 @@
       }
 
 
-      if (!periodInput) {
+      if (currentService === 'Tuition Payment' && !periodInput) {
         alert("Please select a Payment Period before joining the queue.");
         return;
       }
 
 
-      if (!payTypeInput) {
+      if (currentService === 'Tuition Payment' && !payTypeInput) {
         alert("Please select a Payment Type before joining the queue.");
         return;
       }
 
 
-      if (!payPercentage) {
+      if (currentService === 'Tuition Payment' && !payPercentage) {
         alert("Please select a Payment Percentage before joining the queue.");
         document.getElementById('payPercentage').focus();
         return;
@@ -2265,7 +2351,7 @@
       try {
         const response = await fetch('./api.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
           body: JSON.stringify({
             action: 'create_ticket',
             lane: lane.includes('PWD') ? 'Priority' : 'Regular',
@@ -2275,9 +2361,10 @@
             address: studAddress,
             yearLevel: studYear,
             service: currentService,
-            payment: payTypeInput.value,
-            paymentPeriod: periodInput.value,
-            paymentPercentage: `${payPercentage}%`,
+            payment: currentService === 'Tuition Payment' ? payTypeInput.value : 'N/A (Document Only)',
+            paymentPeriod: currentService === 'Tuition Payment' ? periodInput.value : '',
+            paymentPercentage: currentService === 'Tuition Payment' && payPercentage.includes('%') ? payPercentage : '',
+            discount: currentService === 'Tuition Payment' && payPercentage && !payPercentage.includes('%') ? payPercentage : '',
             notes: lane === 'Parent/Guardian' ? `Relation: ${relation}` : ''
           })
         });
@@ -2517,9 +2604,7 @@
         !studCourse ||
         !studYear ||
         !currentService ||
-        !periodInput ||
-        !payTypeInput ||
-        !payPercentage ||
+        (currentService === 'Tuition Payment' && (!periodInput || !payTypeInput || !payPercentage)) ||
         !laneInput
       ) {
         return false;
@@ -3002,8 +3087,6 @@
        REAL-TIME SYNCHRONIZATION
     ========================================= */
 
-    setInterval(refreshQueueState, 1500);
-
 
     /* =========================================
        INITIAL UI UPDATE
@@ -3032,7 +3115,7 @@
     );
 
 
-refreshQueueState();
+restoreStudentSession();
 
   </script>
 

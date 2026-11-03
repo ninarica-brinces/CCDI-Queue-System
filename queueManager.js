@@ -14,8 +14,10 @@ export class QueueManager {
   #listeners = [];
   #statusListeners = [];
   #fetchPromise = null;
+  #csrfToken;
 
-  constructor() {
+  constructor(csrfToken) {
+    this.#csrfToken = csrfToken;
     this.init();
   }
 
@@ -49,7 +51,9 @@ export class QueueManager {
           } catch {
             // Keep the HTTP status message when the server does not return JSON.
           }
-          throw new Error(message);
+          const error = new Error(message);
+          error.status = response.status;
+          throw error;
         }
 
         const result = await response.json();
@@ -62,6 +66,10 @@ export class QueueManager {
         this.#setSyncStatus('Connected to PostgreSQL');
         return result;
       } catch (error) {
+        if (error.status === 401) {
+          window.location.replace('cashier.html');
+          throw error;
+        }
         if (attempt >= retries) {
           console.error('Failed to fetch queue state:', error);
           this.#setSyncStatus('PostgreSQL disconnected');
@@ -137,6 +145,10 @@ export class QueueManager {
     return structuredClone(this.#state);
   }
 
+  get csrfToken() {
+    return this.#csrfToken;
+  }
+
   subscribe(listener) {
     this.#listeners.push(listener);
     listener(this.getState());
@@ -160,7 +172,7 @@ export class QueueManager {
     try {
       const response = await fetch(APP_CONFIG.apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.#csrfToken },
         body: JSON.stringify({
           action: 'create_ticket',
           lane,
@@ -191,7 +203,7 @@ export class QueueManager {
     try {
       const response = await fetch(APP_CONFIG.apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.#csrfToken },
         body: JSON.stringify({ action: 'call_next', lane })
       });
       const result = await response.json();
@@ -234,7 +246,7 @@ export class QueueManager {
     try {
       const response = await fetch(APP_CONFIG.apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.#csrfToken },
         body: JSON.stringify({ action: 'recall_ticket', ticket_id: ticket.dbId })
       });
       const result = await response.json();
@@ -271,7 +283,7 @@ export class QueueManager {
   async #updateTicketStatus(ticketId, status) {
     const response = await fetch(APP_CONFIG.apiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.#csrfToken },
       body: JSON.stringify({
         action: 'update_status',
         ticket_id: ticketId,
@@ -299,7 +311,7 @@ export class QueueManager {
     try {
       const response = await fetch(APP_CONFIG.apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.#csrfToken },
         body: JSON.stringify({ action: 'reset_day' })
       });
       const result = await response.json();

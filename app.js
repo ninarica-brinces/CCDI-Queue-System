@@ -12,11 +12,8 @@ function createSafeElement(tag, className, textContent = '') {
 }
 
 function formatPaymentDetails(ticket) {
-  if (
-    ticket.service !== 'Tuition Payment' &&
-    !['waiting', 'serving'].includes(ticket.status)
-  ) {
-    return 'Restricted';
+  if (ticket.service !== 'Tuition Payment') {
+    return '';
   }
 
   const details = [
@@ -119,9 +116,11 @@ function renderServingPanel(numElem, detailsElem, currentItem) {
   const fields = [
     { label: 'Student Name:', val: currentItem.studentName },
     { label: 'Service:', val: currentItem.service },
-    { label: 'Payment:', val: formatPaymentDetails(currentItem) },
     { label: 'Time Issued:', val: currentItem.time }
   ];
+  if (currentItem.service === 'Tuition Payment') {
+    fields.splice(2, 0, { label: 'Payment:', val: formatPaymentDetails(currentItem) });
+  }
 
   fields.forEach(field => {
     const row = createSafeElement('div', 'details-row');
@@ -247,13 +246,14 @@ function renderReportsPage(state) {
 
   allItems.forEach(item => {
     if (item.service) serviceCounts[item.service] = (serviceCounts[item.service] || 0) + 1;
-    if (item.payment) {
+    if (item.service === 'Tuition Payment' && item.payment) {
       paymentCounts[item.payment] = (paymentCounts[item.payment] || 0) + 1;
       visiblePaymentCount++;
     }
   });
 
   renderDistributionTable(elements.rptServicesBody, serviceCounts, allItems.length);
+  elements.paymentSummary.hidden = visiblePaymentCount === 0;
   renderDistributionTable(elements.rptPaymentsBody, paymentCounts, visiblePaymentCount);
 }
 
@@ -272,6 +272,53 @@ function renderDistributionTable(tbody, dataMap, total) {
 }
 
 function bindEvents() {
+  elements.cashierLoginForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    elements.cashierLoginMessage.textContent = '';
+    const submitButton = elements.cashierLoginForm.querySelector('[type="submit"]');
+    submitButton.disabled = true;
+    try {
+      const response = await fetch(APP_CONFIG.apiUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'cashier_login',
+          staffId: elements.cashierLoginStaffId.value.trim(),
+          password: elements.cashierLoginPassword.value
+        })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success || !result.csrf_token) {
+        throw new Error(result.message || 'Cashier sign-in failed.');
+      }
+      elements.cashierLoginForm.reset();
+      await startCashierSession(result.csrf_token);
+    } catch (error) {
+      elements.cashierLoginMessage.textContent = error.message || 'Cashier sign-in failed.';
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+
+  elements.cashierLogoutBtn.addEventListener('click', async () => {
+    try {
+      const response = await fetch(APP_CONFIG.apiUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': queueManager.csrfToken },
+        body: JSON.stringify({ action: 'logout' })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to sign out.');
+      }
+      window.location.replace('student.html');
+    } catch (error) {
+      alert(error.message || 'Unable to sign out.');
+    }
+  });
+
   elements.navQueue.addEventListener('click', (e) => {
     e.preventDefault();
     switchTab(elements.pageQueue, elements.navQueue);
@@ -291,6 +338,7 @@ function bindEvents() {
   elements.txFilterStatus.addEventListener('change', () => renderTransactionsPage(queueManager.getState()));
 
   elements.openModalBtn.addEventListener('click', () => elements.dialog.showModal());
+  elements.serviceTypeSelect.addEventListener('change', updateTuitionFields);
 
   const closeModal = () => elements.dialog.close();
   elements.closeModalBtn.addEventListener('click', closeModal);
@@ -313,15 +361,16 @@ function bindEvents() {
       return;
     }
 
+    const isTuitionPayment = elements.serviceTypeSelect.value === 'Tuition Payment';
     const created = await queueManager.createTicket({
       lane: elements.laneTypeSelect.value,
       studentId,
       studentName: studentName,
       service: elements.serviceTypeSelect.value,
-      payment: elements.paymentTypeSelect.value,
-      paymentPeriod: elements.paymentPeriodSelect.value,
-      paymentPercentage: isPercentage ? customValue : '',
-      discount: customValue && !isPercentage ? customValue : 'None'
+      payment: isTuitionPayment ? elements.paymentTypeSelect.value : 'N/A (Document Only)',
+      paymentPeriod: isTuitionPayment ? elements.paymentPeriodSelect.value : '',
+      paymentPercentage: isTuitionPayment && isPercentage ? customValue : '',
+      discount: isTuitionPayment && customValue && !isPercentage ? customValue : ''
     });
     if (!created) return;
     elements.ticketForm.reset();
@@ -376,6 +425,7 @@ function init() {
     txSearchInput: document.getElementById('txSearchInput'),
     txFilterStatus: document.getElementById('txFilterStatus'),
     txTableBody: document.getElementById('txTableBody'),
+    paymentSummary: document.getElementById('paymentSummary'),
 
     rptTotalTickets: document.getElementById('rptTotalTickets'),
     rptCompletionRate: document.getElementById('rptCompletionRate'),
@@ -396,6 +446,14 @@ function init() {
     studentNameInput: document.getElementById('studentName'),
     studentIdInput: document.getElementById('studentId'),
     customDiscountInput: document.getElementById('customDiscount'),
+    tuitionPaymentFields: document.getElementById('tuitionPaymentFields'),
+
+    cashierLoginDialog: document.getElementById('cashierLoginDialog'),
+    cashierLoginForm: document.getElementById('cashierLoginForm'),
+    cashierLoginStaffId: document.getElementById('cashierLoginStaffId'),
+    cashierLoginPassword: document.getElementById('cashierLoginPassword'),
+    cashierLoginMessage: document.getElementById('cashierLoginMessage'),
+    cashierLogoutBtn: document.getElementById('cashierLogoutBtn'),
 
     liveClock: document.getElementById('liveClock'),
     resetSystemBtn: document.getElementById('resetSystemBtn'),
@@ -427,13 +485,53 @@ function init() {
     prioTableBody: document.getElementById('prioTableBody')
   };
 
-  queueManager = new QueueManager();
   populateFormOptions();
+  updateTuitionFields();
   initClock();
   bindEvents();
+  restoreCashierSession();
+}
 
+function updateTuitionFields() {
+  const isTuition = elements.serviceTypeSelect.value === 'Tuition Payment';
+  elements.tuitionPaymentFields.hidden = !isTuition;
+  elements.paymentTypeSelect.required = isTuition;
+  if (!isTuition) {
+    elements.paymentTypeSelect.value = 'N/A (Document Only)';
+    elements.paymentPeriodSelect.value = '';
+    elements.customDiscountInput.value = '';
+  }
+}
+
+async function restoreCashierSession() {
+  try {
+    const response = await fetch(`${APP_CONFIG.apiUrl}?action=auth_status`, {
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Unable to verify cashier session.');
+    }
+    if (result.authenticated && result.role === 'cashier' && result.csrf_token) {
+      await startCashierSession(result.csrf_token);
+      return;
+    }
+    document.body.classList.remove('auth-locked');
+    elements.cashierLoginDialog.showModal();
+  } catch (error) {
+    document.body.classList.remove('auth-locked');
+    elements.cashierLoginMessage.textContent = error.message || 'Unable to verify cashier session.';
+    elements.cashierLoginDialog.showModal();
+  }
+}
+
+async function startCashierSession(csrfToken) {
+  document.body.classList.remove('auth-locked');
+  if (elements.cashierLoginDialog.open) elements.cashierLoginDialog.close();
+  queueManager = new QueueManager(csrfToken);
   queueManager.subscribe(renderUI);
-  queueManager.subscribeToSyncStatus((status) => {
+  queueManager.subscribeToSyncStatus(status => {
     const statusElement = document.getElementById('storageStatus');
     if (statusElement) statusElement.textContent = status;
   });

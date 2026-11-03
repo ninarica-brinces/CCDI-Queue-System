@@ -1558,11 +1558,9 @@
 
   <div class="form-group">
 
-    <label>
-      Staff ID Number
-    </label>
+    <label for="cashierUsername">Username</label>
 
-    <input type="text" id="cashierStaffId" class="form-control" placeholder="Enter Staff ID Number">
+    <input type="text" id="cashierUsername" class="form-control" placeholder="Enter Username" autocomplete="username">
 
   </div>
 
@@ -1929,9 +1927,9 @@
 
     async function loginCashier() {
 
-      const staffId =
+      const username =
         document.getElementById(
-          'cashierStaffId'
+          'cashierUsername'
         ).value.trim();
 
       const pass =
@@ -1940,14 +1938,14 @@
         ).value;
 
 
-      if (!staffId) {
+      if (!username) {
 
         alert(
-          "Please enter your Staff ID Number."
+          "Please enter your Username."
         );
 
         document.getElementById(
-          'cashierStaffId'
+          'cashierUsername'
         ).focus();
 
         return;
@@ -1975,7 +1973,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ action: 'cashier_login', staffId, password: pass })
+          body: JSON.stringify({ action: 'cashier_login', username, password: pass })
         });
         const result = await response.json();
         if (!response.ok || !result.success || !result.csrf_token) {

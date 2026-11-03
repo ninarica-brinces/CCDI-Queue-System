@@ -16,8 +16,6 @@ the project reference):
 - `DB_PASSWORD` (required; keep this secret and do not commit it)
 - `DB_SSLMODE` (optional; defaults to `require`; retain SSL for Supabase)
 - `APP_TIMEZONE` (optional; defaults to `Asia/Manila`)
-- `CASHIER_STAFF_ID` (required; the authorized cashier staff ID)
-- `CASHIER_PASSWORD_HASH` (required; a PHP `password_hash()` result, never the plaintext password)
 
 The Docker image installs PHP's `pdo_pgsql` and `pgsql` extensions. For local
 development, set the same variables in the environment used to run PHP. The
@@ -36,15 +34,10 @@ terminal is in `cashier.html` and uses `app.js`. Both call the same relative
 Deploy the PHP app and its HTML/JavaScript together as one Render web service;
 do not host the pages as a separate static site with a different API URL.
 
-Generate the cashier password hash in a trusted PHP CLI environment and store
-the resulting hash and staff ID as server environment variables:
-
-```powershell
-php -r "echo password_hash('replace-with-a-strong-password', PASSWORD_DEFAULT), PHP_EOL;"
-```
-
-Cashier actions require server-side authorization, same-origin requests, a
-CSRF token, and sign-in. Student sign-in requires a case-insensitive,
+Cashier credentials are validated against active records in
+`public.system_users`; the cashier portal requires a database role of
+`cashier`. Cashier actions require server-side authorization, same-origin
+requests, a CSRF token, and sign-in. Student sign-in requires a case-insensitive,
 trimmed Student ID and registered full-name match. Sessions use HttpOnly,
 SameSite cookies and expire after 30 minutes of inactivity.
 
@@ -65,5 +58,6 @@ after a ticket leaves the active queue.
 Serve the application only over HTTPS. The API does not enable cross-origin
 access, protects cashier operations with server-side authorization, limits
 student sessions to their own identity, and omits payment details for
-non-tuition services. The cashier password hash must remain a server-side
-environment variable.
+non-tuition services. Store cashier passwords as `password_hash()` hashes in
+`public.system_users`; the API retains plaintext comparison only for legacy
+records during migration.

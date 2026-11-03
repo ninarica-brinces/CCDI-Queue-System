@@ -284,7 +284,7 @@ function bindEvents() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'cashier_login',
-          staffId: elements.cashierLoginStaffId.value.trim(),
+          username: elements.cashierLoginUsername.value.trim(),
           password: elements.cashierLoginPassword.value
         })
       });
@@ -450,7 +450,7 @@ function init() {
 
     cashierLoginDialog: document.getElementById('cashierLoginDialog'),
     cashierLoginForm: document.getElementById('cashierLoginForm'),
-    cashierLoginStaffId: document.getElementById('cashierLoginStaffId'),
+    cashierLoginUsername: document.getElementById('cashierLoginUsername'),
     cashierLoginPassword: document.getElementById('cashierLoginPassword'),
     cashierLoginMessage: document.getElementById('cashierLoginMessage'),
     cashierLogoutBtn: document.getElementById('cashierLogoutBtn'),

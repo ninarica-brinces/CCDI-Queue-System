@@ -150,32 +150,42 @@ try {
         respond(405, ['success' => false, 'message' => 'Method not allowed']);
     }
 
-    if ($method === 'POST' && $action === 'cashier_login') {
-        $staffId = requestString($input, 'staffId', 80);
-        $password = $input['password'] ?? '';
-        if (!is_string($password) || strlen($password) > 1024) {
-            respond(400, ['success' => false, 'message' => 'Invalid password']);
-        }
-        $configuredStaffId = getenv('CASHIER_STAFF_ID');
-        $configuredPasswordHash = getenv('CASHIER_PASSWORD_HASH');
-        if (!$configuredStaffId || !$configuredPasswordHash) {
-            error_log("Queue API cashier authentication is not configured [$requestId]");
-            respond(503, ['success' => false, 'message' => 'Cashier sign-in is unavailable. Configure cashier credentials on the server.']);
-        }
-        if (
-            $staffId === '' ||
-            $password === '' ||
-            !hash_equals($configuredStaffId, $staffId) ||
-            !password_verify($password, $configuredPasswordHash)
-        ) {
-            respond(401, ['success' => false, 'message' => 'Staff ID or password is incorrect']);
-        }
-
-        issueSession('cashier', ['staff_id' => $configuredStaffId]);
-        respond(200, ['success' => true, 'role' => 'cashier', 'csrf_token' => $_SESSION['csrf_token']]);
-    }
-
     require_once __DIR__ . '/db.php';
+
+    if ($method === 'POST' && $action === 'cashier_login') {
+        $username = $input['username'] ?? '';
+        $password = $input['password'] ?? '';
+        if (!is_string($username) || !is_string($password)) {
+            respond(400, ['success' => false, 'message' => 'Mangyaring ilagay ang Username at Password.']);
+        }
+
+        $username = trim($username);
+        $password = trim($password);
+        if ($username === '' || $password === '') {
+            respond(400, ['success' => false, 'message' => 'Mangyaring ilagay ang Username at Password.']);
+        }
+
+        $stmt = $conn->prepare(
+            'SELECT * FROM public.system_users WHERE username = ? AND is_active = TRUE'
+        );
+        $stmt->execute([$username]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($user && ($password === $user['password'] || password_verify($password, $user['password']))) {
+            if (($user['role'] ?? '') !== 'cashier') {
+                respond(403, ['success' => false, 'message' => 'This account is not authorized for the cashier portal.']);
+            }
+            issueSession('cashier', ['staff_id' => $username]);
+            respond(200, [
+                'success' => true,
+                'message' => 'Matagumpay na nakapag-log in!',
+                'role' => $user['role'],
+                'csrf_token' => $_SESSION['csrf_token'],
+            ]);
+        }
+
+        respond(401, ['success' => false, 'message' => 'Mali ang Username o Password.']);
+    }
 
     if ($method === 'POST' && $action === 'student_login') {
         $studentId = requestString($input, 'studentId', 64);

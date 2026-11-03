@@ -172,14 +172,15 @@ try {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user && ($password === $user['password'] || password_verify($password, $user['password']))) {
-            if (($user['role'] ?? '') !== 'cashier') {
+            $role = strtolower(trim((string) ($user['role'] ?? '')));
+            if ($role !== 'cashier') {
                 respond(403, ['success' => false, 'message' => 'This account is not authorized for the cashier portal.']);
             }
             issueSession('cashier', ['staff_id' => $username]);
             respond(200, [
                 'success' => true,
                 'message' => 'Matagumpay na nakapag-log in!',
-                'role' => $user['role'],
+                'role' => $role,
                 'csrf_token' => $_SESSION['csrf_token'],
             ]);
         }

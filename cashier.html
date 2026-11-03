@@ -25,10 +25,10 @@
             <a href="#" id="navQueue" class="nav-link active"><i class="fa-solid fa-users-line"></i> Queue Management</a>
           </li>
           <li class="nav-item">
-            <a href="#" id="navTransactions" class="nav-link"><i class="fa-solid fa-receipt"></i> Transactions</a>
+            <a href="#" id="navTransactions" class="nav-link"><i class="fa-solid fa-receipt"></i> Payment Histories</a>
           </li>
           <li class="nav-item">
-            <a href="#" id="navReports" class="nav-link"><i class="fa-solid fa-chart-column"></i> Reports</a>
+            <a href="#" id="navReports" class="nav-link"><i class="fa-solid fa-chart-column"></i> Transaction Log</a>
           </li>
         </ul>
       </nav>
@@ -168,11 +168,11 @@
       </div>
     </div>
 
-    <!-- PAGE 2: TRANSACTIONS -->
+    <!-- PAGE 2: PAYMENT HISTORIES -->
     <div id="pageTransactions" class="page-view">
       <header>
         <div class="header-left">
-          <h1 class="header-title">Transaction History Log</h1>
+          <h1 class="header-title">Payment Histories</h1>
         </div>
       </header>
       <div class="container">
@@ -204,11 +204,11 @@
       </div>
     </div>
 
-    <!-- PAGE 3: REPORTS -->
+    <!-- PAGE 3: TRANSACTION LOG -->
     <div id="pageReports" class="page-view">
       <header>
         <div class="header-left">
-          <h1 class="header-title">Daily Operations Analytics</h1>
+          <h1 class="header-title">Transaction Log</h1>
         </div>
       </header>
       <div class="container">
@@ -246,7 +246,7 @@
 
           <div class="card">
             <div class="card-header">
-              <h2 class="card-title">Payment Option Distribution</h2>
+              <h2 class="card-title">Payment Option Distribution (Tuition / Active Tickets)</h2>
             </div>
             <table class="report-table">
               <thead>
@@ -270,7 +270,7 @@
     </footer>
   </main>
 
-  <!-- ACCESSIBLE DIALOG (MODAL) WITH AUTOCOMPLETE & DISCOUNT INPUT -->
+  <!-- Accessible ticket dialog with student authorization lookup and custom discount input -->
   <dialog id="ticketDialog" class="modal">
     <div class="modal-content">
       <header class="modal-header">
@@ -283,18 +283,12 @@
           <select id="laneType" name="laneType" required></select>
         </div>
         <div class="form-group">
-          <label for="studentLookup">Find CCDI student by ID or name</label>
-          <input type="search" id="studentLookup" name="studentLookup" placeholder="Type a student ID or name" autocomplete="off" aria-controls="studentSearchResults" aria-autocomplete="list">
-          <div id="studentSearchResults" class="student-search-results" role="listbox" hidden></div>
-          <small id="studentDetails" class="muted"></small>
-          <input type="hidden" id="studentDatabaseId" name="studentDatabaseId">
-          <input type="hidden" id="studentCourse" name="studentCourse">
-          <input type="hidden" id="studentAddress" name="studentAddress">
-          <input type="hidden" id="studentYearLevel" name="studentYearLevel">
+          <label for="studentId">Student ID</label>
+          <input type="text" id="studentId" name="studentId" placeholder="Enter CCDI Student ID" maxlength="64" autocomplete="off" aria-required="true">
         </div>
         <div class="form-group">
-          <label for="studentName">Student / Client Name</label>
-          <input type="text" id="studentName" name="studentName" placeholder="Enter full name" required maxlength="120" autocomplete="off">
+          <label for="studentName">Student Name</label>
+          <input type="text" id="studentName" name="studentName" placeholder="Enter full name" maxlength="120" autocomplete="off" aria-required="true">
         </div>
         <div class="form-group">
           <label for="serviceType">Service Requested</label>
@@ -309,8 +303,8 @@
           <select id="paymentPeriod" name="paymentPeriod"></select>
         </div>
         <div class="form-group">
-          <label for="customDiscount">Discount (% or Amount)</label>
-          <input type="text" id="customDiscount" name="customDiscount" placeholder="e.g., 20% or 100 PHP" autocomplete="off">
+          <label for="customDiscount">Custom Discount / Payment Percentage</label>
+          <input type="text" id="customDiscount" name="customDiscount" placeholder="Enter a percentage or amount, e.g. 20% or 100 PHP" maxlength="120" autocomplete="off">
         </div>
         <footer class="modal-actions">
           <button type="button" id="closeModalBtn" class="btn btn-secondary">Cancel</button>

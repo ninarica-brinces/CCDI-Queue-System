@@ -94,6 +94,7 @@ export class QueueManager {
         paymentPeriod: ticket.payment_period || '',
         paymentPercentage: ticket.payment_percentage || '',
         discount: ticket.discount || '',
+        recallCount: Number(ticket.recall_count) || 0,
         notes: ticket.notes || '',
         status: ticket.status,
         time: ticket.created_at,
@@ -150,12 +151,10 @@ export class QueueManager {
     lane,
     studentId,
     studentName,
-    course,
-    address,
-    yearLevel,
     service,
     payment,
     paymentPeriod,
+    paymentPercentage,
     discount
   }) {
     try {
@@ -167,12 +166,10 @@ export class QueueManager {
           lane,
           studentId,
           studentName,
-          course,
-          address,
-          yearLevel,
           service,
           payment,
           paymentPeriod,
+          paymentPercentage,
           discount
         })
       });
@@ -222,6 +219,37 @@ export class QueueManager {
 
   async skipCurrent(lane) {
     await this.#endCurrent(lane, 'cancelled'); // Sa DB natin, 'cancelled' ang katumbas ng skipped
+  }
+
+  async recallCurrent(lane) {
+    const ticket = lane === 'Priority'
+      ? this.#state.currentPriority
+      : this.#state.currentRegular;
+    if (!ticket) return false;
+    if (ticket.recallCount >= 3) {
+      alert('This ticket has reached the maximum of 3 recalls.');
+      return false;
+    }
+
+    try {
+      const response = await fetch(APP_CONFIG.apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'recall_ticket', ticket_id: ticket.dbId })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to recall ticket');
+      }
+
+      await this.fetchState().catch(() => undefined);
+      return true;
+    } catch (error) {
+      console.error('Failed to recall ticket:', error);
+      alert(error.message || 'Failed to recall ticket');
+      await this.fetchState().catch(() => undefined);
+      return false;
+    }
   }
 
   async #endCurrent(lane, status) {

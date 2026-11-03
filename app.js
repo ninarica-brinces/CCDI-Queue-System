@@ -1,6 +1,5 @@
 import { APP_CONFIG } from './config.js';
 import { QueueManager } from './queueManager.js';
-import { setupStudentSearch } from './studentSearch.js';
 
 let elements = {};
 let queueManager;
@@ -13,6 +12,13 @@ function createSafeElement(tag, className, textContent = '') {
 }
 
 function formatPaymentDetails(ticket) {
+  if (
+    ticket.service !== 'Tuition Payment' &&
+    !['waiting', 'serving'].includes(ticket.status)
+  ) {
+    return 'Restricted';
+  }
+
   const details = [
     ticket.payment,
     ticket.paymentPeriod,
@@ -134,7 +140,10 @@ function updateControlButtons(lane, currentItem, hasWaiting) {
 
   btnNext.disabled = !!currentItem || !hasWaiting;
   btnSkip.disabled = !currentItem;
-  btnRecall.disabled = !currentItem;
+  btnRecall.disabled = !currentItem || currentItem.recallCount >= 3;
+  btnRecall.title = currentItem
+    ? `Recall ${currentItem.recallCount} of 3 used`
+    : 'Recall unavailable';
   btnComplete.disabled = !currentItem;
 }
 
@@ -186,7 +195,7 @@ function renderTransactionsPage(state) {
 
   if (filtered.length === 0) {
     const tr = createSafeElement('tr');
-    const td = createSafeElement('td', 'empty-msg', 'No transaction history found.');
+    const td = createSafeElement('td', 'empty-msg', 'No payment history found.');
     td.colSpan = 8;
     tr.appendChild(td);
     tbody.appendChild(tr);
@@ -226,6 +235,7 @@ function renderReportsPage(state) {
 
   const paymentCounts = {};
   APP_CONFIG.paymentOptions.forEach(p => paymentCounts[p.label] = 0);
+  let visiblePaymentCount = 0;
 
   const allItems = [
     ...state.transactions,
@@ -237,11 +247,14 @@ function renderReportsPage(state) {
 
   allItems.forEach(item => {
     if (item.service) serviceCounts[item.service] = (serviceCounts[item.service] || 0) + 1;
-    if (item.payment) paymentCounts[item.payment] = (paymentCounts[item.payment] || 0) + 1;
+    if (item.payment) {
+      paymentCounts[item.payment] = (paymentCounts[item.payment] || 0) + 1;
+      visiblePaymentCount++;
+    }
   });
 
   renderDistributionTable(elements.rptServicesBody, serviceCounts, allItems.length);
-  renderDistributionTable(elements.rptPaymentsBody, paymentCounts, allItems.length);
+  renderDistributionTable(elements.rptPaymentsBody, paymentCounts, visiblePaymentCount);
 }
 
 function renderDistributionTable(tbody, dataMap, total) {
@@ -255,31 +268,6 @@ function renderDistributionTable(tbody, dataMap, total) {
     tr.appendChild(createSafeElement('td', '', count));
     tr.appendChild(createSafeElement('td', '', `${pct}%`));
     tbody.appendChild(tr);
-  });
-}
-
-function setupAutocomplete() {
-  setupStudentSearch(
-    elements.studentLookup,
-    elements.studentSearchResults,
-    student => {
-      elements.studentDatabaseId.value = student.student_id;
-      elements.studentCourse.value = student.course || '';
-      elements.studentAddress.value = student.address || '';
-      elements.studentYearLevel.value = student.year_level || '';
-      elements.studentNameInput.value = student.full_name;
-      elements.studentDetails.textContent =
-        `${student.course}, Year ${student.year_level} | ${student.address}`;
-    }
-  );
-
-  elements.studentNameInput.addEventListener('input', () => {
-    elements.studentDatabaseId.value = '';
-    elements.studentCourse.value = '';
-    elements.studentAddress.value = '';
-    elements.studentYearLevel.value = '';
-    elements.studentDetails.textContent = '';
-    elements.studentLookup.value = '';
   });
 }
 
@@ -311,53 +299,63 @@ function bindEvents() {
   elements.ticketForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const studentName = elements.studentNameInput.value.trim();
-    const customDiscount = elements.customDiscountInput.value.trim() || 'None';
+    const customValue = elements.customDiscountInput.value.trim();
 
-    if (!studentName) {
-      alert('Please enter a valid student name.');
+    const studentId = elements.studentIdInput.value.trim();
+    if (!studentName || !studentId) {
+      alert('Authorization failed: Student Name and Student ID must exactly match an authorized CCDI student record.');
+      return;
+    }
+
+    const isPercentage = customValue.includes('%');
+    if (isPercentage && customValue.length > 32) {
+      alert('Custom percentages must be 32 characters or fewer.');
       return;
     }
 
     const created = await queueManager.createTicket({
       lane: elements.laneTypeSelect.value,
-      studentId: elements.studentDatabaseId.value,
+      studentId,
       studentName: studentName,
-      course: elements.studentCourse.value,
-      address: elements.studentAddress.value,
-      yearLevel: elements.studentYearLevel.value,
       service: elements.serviceTypeSelect.value,
       payment: elements.paymentTypeSelect.value,
       paymentPeriod: elements.paymentPeriodSelect.value,
-      discount: customDiscount
+      paymentPercentage: isPercentage ? customValue : '',
+      discount: customValue && !isPercentage ? customValue : 'None'
     });
-
     if (!created) return;
     elements.ticketForm.reset();
-    elements.studentLookup.value = '';
-    elements.studentDetails.textContent = '';
     elements.dialog.close();
   });
 
   elements.btnRegNext.addEventListener('click', async () => await queueManager.callNext('Regular'));
   elements.btnRegComplete.addEventListener('click', async () => await queueManager.completeCurrent('Regular'));
   elements.btnRegSkip.addEventListener('click', async () => await queueManager.skipCurrent('Regular'));
-  elements.btnRegRecall.addEventListener('click', () => {
+  elements.btnRegRecall.addEventListener('click', async () => {
     const active = queueManager.getState().currentRegular;
-    if (active) alert(`[RECALL] Ticket ${active.id}: Please proceed to Counter!`);
+    if (active && await queueManager.recallCurrent('Regular')) {
+      alert(`📱 CCDI Queue Alert: Ticket ${active.id}, please return to the cashier counter.`);
+    }
   });
 
   elements.btnPrioNext.addEventListener('click', async () => await queueManager.callNext('Priority'));
   elements.btnPrioComplete.addEventListener('click', async () => await queueManager.completeCurrent('Priority'));
   elements.btnPrioSkip.addEventListener('click', async () => await queueManager.skipCurrent('Priority'));
-  elements.btnPrioRecall.addEventListener('click', () => {
+  elements.btnPrioRecall.addEventListener('click', async () => {
     const active = queueManager.getState().currentPriority;
-    if (active) alert(`[RECALL] Ticket ${active.id}: Please proceed to Counter!`);
+    if (active && await queueManager.recallCurrent('Priority')) {
+      alert(`📱 CCDI Queue Alert: Ticket ${active.id}, please return to the cashier counter.`);
+    }
   });
 
   elements.resetSystemBtn.addEventListener('click', async () => {
-    if (confirm('Are you sure you want to reset all queue counters and tickets for today?')) {
+    if (
+      confirm('Reset the operational day? A summary report will be archived, then today\'s queue tickets will be cleared.') &&
+      confirm('Final confirmation: permanently clear today\'s tickets and begin a fresh queue?')
+    ) {
       try {
         await queueManager.resetDay();
+        alert('Operational day reset. The daily report was archived successfully.');
       } catch (error) {
         alert(error.message);
       }
@@ -396,13 +394,7 @@ function init() {
     paymentPeriodSelect: document.getElementById('paymentPeriod'),
 
     studentNameInput: document.getElementById('studentName'),
-    studentLookup: document.getElementById('studentLookup'),
-    studentSearchResults: document.getElementById('studentSearchResults'),
-    studentDatabaseId: document.getElementById('studentDatabaseId'),
-    studentCourse: document.getElementById('studentCourse'),
-    studentAddress: document.getElementById('studentAddress'),
-    studentYearLevel: document.getElementById('studentYearLevel'),
-    studentDetails: document.getElementById('studentDetails'),
+    studentIdInput: document.getElementById('studentId'),
     customDiscountInput: document.getElementById('customDiscount'),
 
     liveClock: document.getElementById('liveClock'),
@@ -439,7 +431,6 @@ function init() {
   populateFormOptions();
   initClock();
   bindEvents();
-  setupAutocomplete();
 
   queueManager.subscribe(renderUI);
   queueManager.subscribeToSyncStatus((status) => {

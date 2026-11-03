@@ -24,19 +24,27 @@ diagnostics under the included request ID.
 
 Before deploying, run [`supabase.sql`](./supabase.sql) in the Supabase SQL
 Editor. It safely adds ticket fields for student details and transaction
-information, plus indexes used for shared queue ordering and active-ticket
-checks. API failures include a request ID that can be matched with Render logs.
+information, recall tracking, the daily report archive, and indexes used for
+shared queue ordering and active-ticket checks. API failures include a request
+ID that can be matched with Render logs.
 
-The portal picker in `index.html` routes to the API-backed student and cashier
-pages. Both call the same relative `api.php` endpoint and therefore use the
-same server-side PDO connection. Deploy the PHP app and its HTML/JavaScript
-together as one Render web service; do not host the pages as a separate static
-site with a different API URL.
+`index.html` redirects to the student portal in `student.html`; the cashier
+terminal is in `cashier.html` and uses `app.js`. Both call the same relative
+`api.php` endpoint and therefore use the same server-side PDO connection.
+Deploy the PHP app and its HTML/JavaScript together as one Render web service;
+do not host the pages as a separate static site with a different API URL.
 
 Queue requests and their requested payment details are stored in
-`queue_tickets`; cashier completion updates that ticket's status. There is no
-separate payment ledger or captured amount/receipt record in the current
-schema.
+`queue_tickets`; cashier completion updates that ticket's status. Resetting the
+operational day archives status, lane, and service totals in `daily_reports`
+before clearing that day's tickets. There is no separate payment ledger or
+captured amount/receipt record in the current schema.
+
+Ticket creation requires an exact Student ID and full name match in
+`ccdi_students`; student lookup suggestions are not exposed. The API limits
+each operational day to 100 issued tickets and allows up to three recalls per
+serving ticket. Detailed payment fields for non-tuition services are withheld
+after a ticket leaves the active queue.
 
 ## Deployment security
 

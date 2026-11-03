@@ -796,6 +796,7 @@
           id="studName"
           class="form-control"
           placeholder="Enter full name"
+          autocomplete="off"
         >
       </div>
 
@@ -1307,6 +1308,7 @@
           </button>
 
           <button
+            id="cashierRecallButton"
             class="btn-action btn-recall"
             onclick="recallTicket()"
           >
@@ -1506,21 +1508,16 @@
 
   <div class="form-group">
 
-    <label>
-      Student ID or Name
-    </label>
+    <label for="modalStudId">Student ID</label>
 
     <input
       type="text"
       id="modalStudId"
       class="form-control"
-      placeholder="Type a student ID or name"
+      placeholder="Enter your CCDI Student ID"
       autofocus
       autocomplete="off"
-      aria-controls="loginStudentSuggestions"
-      aria-autocomplete="list"
     >
-    <div id="loginStudentSuggestions" class="student-search-results" role="listbox" hidden></div>
 
   </div>
 
@@ -1634,9 +1631,6 @@
     let remoteTickets = [];
     let apiConnected = false;
     let isRefreshingQueue = false;
-    window.selectedStudentProfile = null;
-
-
     /* =========================================
        SHARED QUEUE STATE
     ========================================= */
@@ -1662,6 +1656,7 @@
         paymentPeriod: ticket.payment_period || '',
         paymentPercentage: ticket.payment_percentage || '',
         discount: ticket.discount || '',
+        recallCount: Number(ticket.recall_count) || 0,
         notes: ticket.notes || '',
         status: ticket.status,
         time: ticket.created_at
@@ -1689,7 +1684,19 @@
           throw new Error(result.message || 'Unable to load the shared queue');
         }
 
+        const previousRecallCounts = new Map(
+          remoteTickets.map(ticket => [String(ticket.ticket_id), Number(ticket.recall_count) || 0])
+        );
+        const recalledTickets = result.data.filter(ticket =>
+          activeStudentId &&
+          ticket.student_id === activeStudentId &&
+          ticket.status === 'serving' &&
+          (Number(ticket.recall_count) || 0) > (previousRecallCounts.get(String(ticket.ticket_id)) || 0)
+        );
         remoteTickets = result.data;
+        recalledTickets.forEach(ticket => {
+          alert(`📱 CCDI Queue Alert: Ticket ${ticket.ticket_number}, please return to the cashier counter.`);
+        });
         const servingTicket = remoteTickets
           .filter(ticket => ticket.status === 'serving')
           .sort((a, b) => a.lane.localeCompare(b.lane))[0];
@@ -1869,11 +1876,6 @@
         toggleRelationField(false);
       }
 
-      const selectedProfile = window.selectedStudentProfile;
-      if (selectedProfile && selectedProfile.student_id === idInput) {
-        populateStudentProfile(selectedProfile);
-      }
-
       activeStudentId = idInput;
 
 
@@ -1891,30 +1893,6 @@
         'studentView'
       );
     }
-
-    function populateStudentProfile(student) {
-      document.getElementById('studName').value = student.full_name;
-      document.getElementById('studAddress').value = student.address;
-
-      const courseAliases = {
-        BSIT: 'BS Information Technology',
-        BSCS: 'BS Computer Science'
-      };
-      const courseSelect = document.getElementById('studCourse');
-      const courseValue = courseAliases[student.course] || student.course;
-      if (![...courseSelect.options].some(option => option.value === courseValue)) {
-        courseSelect.add(new Option(courseValue, courseValue));
-      }
-      courseSelect.value = courseValue;
-
-      const yearSelect = document.getElementById('studYear');
-      const yearValue = `${student.year_level}${['st', 'nd', 'rd'][student.year_level - 1] || 'th'} Year`;
-      if ([...yearSelect.options].some(option => option.value === yearValue)) {
-        yearSelect.value = yearValue;
-      }
-    }
-    window.populateStudentProfile = populateStudentProfile;
-
 
     /* =========================================
        CASHIER LOGIN
@@ -2105,7 +2083,7 @@
       if (!studId) {
 
         alert(
-          "Please login with your Student ID first."
+          "Authorization failed: a valid Student Name and Student ID are required."
         );
 
         return;
@@ -2190,7 +2168,7 @@
 
 
       if (!studName) {
-        alert("Please fill out your Full Name before joining the queue.");
+        alert("Authorization failed: a valid Student Name and Student ID are required.");
         document.getElementById('studName').focus();
         return;
       }
@@ -2355,24 +2333,43 @@
        CASHIER: RECALL
     ========================================= */
 
-    function recallTicket() {
-
+    async function recallTicket() {
       if (!currentlyServing) {
-
-        alert(
-          "No active ticket to recall."
-        );
-
+        alert("No active ticket to recall.");
         return;
       }
 
-
-      playChime();
-
-
-      alert(
-        `Recalling Ticket ${currentlyServing.number} for ${currentlyServing.name}`
+      const ticket = remoteTickets.find(item =>
+        item.status === 'serving' &&
+        item.ticket_number === currentlyServing.number
       );
+      if (!ticket) {
+        alert("The active ticket could not be found in the shared queue.");
+        return;
+      }
+      if ((Number(ticket.recall_count) || 0) >= 3) {
+        alert("This ticket has reached the maximum of 3 recalls.");
+        return;
+      }
+
+      try {
+        const response = await fetch('./api.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'recall_ticket', ticket_id: ticket.ticket_id })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to recall the active ticket');
+        }
+
+        playChime();
+        await refreshQueueState();
+        alert(`📱 Recall alert sent to ${ticket.student_name}. (${result.data.recall_count}/3)`);
+      } catch (error) {
+        console.error('Failed to recall the active ticket:', error);
+        alert(error.message || 'Unable to recall the active ticket.');
+      }
     }
 
 
@@ -2828,6 +2825,12 @@
           'cashierServingInfo'
         ).innerText =
           `${currentlyServing.name} (${currentlyServing.studentId}) • ${currentlyServing.service}`;
+        const recallButton = document.getElementById('cashierRecallButton');
+        const recallCount = Number(
+          remoteTickets.find(ticket => ticket.ticket_number === currentlyServing.number)?.recall_count
+        ) || 0;
+        recallButton.disabled = recallCount >= 3;
+        recallButton.title = `Recall ${recallCount} of 3 used`;
 
       } else {
 
@@ -2841,6 +2844,9 @@
           'cashierServingInfo'
         ).innerText =
           "No active ticket";
+        const recallButton = document.getElementById('cashierRecallButton');
+        recallButton.disabled = true;
+        recallButton.title = "Recall unavailable";
 
       }
 
@@ -3030,21 +3036,7 @@ refreshQueueState();
 
   </script>
 
-  <script type="module">
-    import { setupStudentSearch } from './studentSearch.js';
-
-    const searchInput = document.getElementById('modalStudId');
-    const suggestions = document.getElementById('loginStudentSuggestions');
-    setupStudentSearch(searchInput, suggestions, student => {
-      window.selectedStudentProfile = student;
-      window.populateStudentProfile(student);
-    });
-    searchInput.addEventListener('input', () => {
-      if (searchInput.value.trim() !== window.selectedStudentProfile?.student_id) {
-        window.selectedStudentProfile = null;
-      }
-    });
-
+  <script>
     const requestedPortal = new URLSearchParams(window.location.search).get('portal');
     if (requestedPortal === 'student') window.openStudentModal();
     if (requestedPortal === 'cashier') window.openCashierModal();

@@ -21,6 +21,20 @@ function requestString($input, $key)
     return trim((string) $value);
 }
 
+function restrictPaymentDetails($ticket)
+{
+    if (
+        ($ticket['transaction_type'] ?? '') !== 'Tuition Payment' &&
+        !in_array($ticket['status'] ?? '', ['waiting', 'serving'], true)
+    ) {
+        foreach (['payment_method', 'payment_period', 'payment_percentage', 'discount'] as $field) {
+            $ticket[$field] = null;
+        }
+    }
+
+    return $ticket;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit();
@@ -43,39 +57,10 @@ try {
             'SELECT * FROM public.queue_tickets WHERE service_date = ? ORDER BY created_at ASC, ticket_id ASC'
         );
         $stmt->execute([$today]);
-        respond(200, ['success' => true, 'data' => $stmt->fetchAll()]);
+        $tickets = array_map('restrictPaymentDetails', $stmt->fetchAll());
+        respond(200, ['success' => true, 'data' => $tickets]);
     }
 
-    if ($method === 'GET' && in_array($action, ['search_students', 'search_student'], true)) {
-        $query = requestString($_GET, 'q');
-        if (strlen($query) > 100) {
-            respond(400, ['success' => false, 'message' => 'Search query is too long']);
-        }
-        if ($query === '') {
-            respond(200, ['success' => true, 'data' => []]);
-        }
-
-        $searchTerm = '%' . $query . '%';
-        $stmt = $conn->prepare(
-            "SELECT student_id, first_name, last_name,
-                    first_name || ' ' || last_name AS full_name,
-                    course, address, year_level
-             FROM public.ccdi_students
-             WHERE student_id ILIKE :student_id
-                OR first_name ILIKE :first_name
-                OR last_name ILIKE :last_name
-                OR (first_name || ' ' || last_name) ILIKE :full_name
-             ORDER BY last_name, first_name
-             LIMIT 10"
-        );
-        $stmt->execute([
-            'student_id' => $searchTerm,
-            'first_name' => $searchTerm,
-            'last_name' => $searchTerm,
-            'full_name' => $searchTerm,
-        ]);
-        respond(200, ['success' => true, 'data' => $stmt->fetchAll()]);
-    }
     if ($method !== 'POST') {
         respond(405, ['success' => false, 'message' => 'Method not allowed']);
     }
@@ -104,15 +89,37 @@ try {
         if (!in_array($lane, ['Regular', 'Priority'], true)) {
             respond(400, ['success' => false, 'message' => 'Lane must be Regular or Priority']);
         }
-        if ($studentName === '' || $service === '' || $payment === '') {
-            respond(400, ['success' => false, 'message' => 'Student name, service, and payment are required']);
+        if ($studentName === '' || $studentId === '' || strlen($studentName) > 120 || strlen($studentId) > 64) {
+            respond(403, ['success' => false, 'message' => 'Authorization failed: a valid Student Name and Student ID are required and must exactly match an authorized CCDI student record.']);
+        }
+        $conn->beginTransaction();
+        $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
+        $dailyLock->execute(["daily-operations:$today"]);
+
+        $student = $conn->prepare(
+            "SELECT student_id, first_name || ' ' || last_name AS full_name, course, address, year_level
+             FROM public.ccdi_students
+             WHERE student_id = ? AND first_name || ' ' || last_name = ?
+             LIMIT 1"
+        );
+        $student->execute([$studentId, $studentName]);
+        $authorizedStudent = $student->fetch();
+        if (!$authorizedStudent) {
+            $conn->rollBack();
+            respond(403, ['success' => false, 'message' => 'Authorization failed: Student Name and Student ID must exactly match an authorized CCDI student record.']);
+        }
+
+        $studentName = $authorizedStudent['full_name'];
+        $studentId = $authorizedStudent['student_id'];
+        $course = $authorizedStudent['course'];
+        $address = $authorizedStudent['address'];
+        $yearLevel = (string) $authorizedStudent['year_level'];
+
+        if ($service === '' || $payment === '') {
+            $conn->rollBack();
+            respond(400, ['success' => false, 'message' => 'Service and payment are required']);
         }
         if (
-            strlen($studentName) > 120 ||
-            strlen($studentId) > 64 ||
-            strlen($course) > 120 ||
-            strlen($address) > 500 ||
-            strlen($yearLevel) > 32 ||
             strlen($service) > 120 ||
             strlen($payment) > 240 ||
             strlen($paymentPeriod) > 64 ||
@@ -120,26 +127,33 @@ try {
             strlen($discount) > 120 ||
             strlen($notes) > 240
         ) {
+            $conn->rollBack();
             respond(400, ['success' => false, 'message' => 'One or more ticket fields exceed the allowed length']);
         }
 
-        $conn->beginTransaction();
         $lock = $conn->prepare("SELECT pg_advisory_xact_lock(hashtext(?))");
         $lock->execute(["ticket-number:$today:$lane"]);
 
-        if ($studentId !== '') {
-            $studentLock = $conn->prepare("SELECT pg_advisory_xact_lock(hashtext(?))");
-            $studentLock->execute(["student:$today:$studentId"]);
-            $active = $conn->prepare(
-                "SELECT 1 FROM public.queue_tickets
-                 WHERE service_date = ? AND student_id = ? AND status IN ('waiting', 'serving')
-                 LIMIT 1"
-            );
-            $active->execute([$today, $studentId]);
-            if ($active->fetchColumn()) {
-                $conn->rollBack();
-                respond(409, ['success' => false, 'message' => 'This student already has an active ticket today']);
-            }
+        $studentLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
+        $studentLock->execute(["student:$today:$studentId"]);
+        $active = $conn->prepare(
+            "SELECT 1 FROM public.queue_tickets
+             WHERE service_date = ? AND student_id = ? AND status IN ('waiting', 'serving')
+             LIMIT 1"
+        );
+        $active->execute([$today, $studentId]);
+        if ($active->fetchColumn()) {
+            $conn->rollBack();
+            respond(409, ['success' => false, 'message' => 'This student already has an active ticket today']);
+        }
+
+        $dailyCount = $conn->prepare(
+            'SELECT COUNT(*) FROM public.queue_tickets WHERE service_date = ?'
+        );
+        $dailyCount->execute([$today]);
+        if ((int) $dailyCount->fetchColumn() >= 100) {
+            $conn->rollBack();
+            respond(409, ['success' => false, 'message' => 'The daily limit of 100 student tickets has been reached.']);
         }
 
         $count = $conn->prepare(
@@ -188,6 +202,8 @@ try {
         }
 
         $conn->beginTransaction();
+        $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
+        $dailyLock->execute(["daily-operations:$today"]);
         $lock = $conn->prepare("SELECT pg_advisory_xact_lock(hashtext(?))");
         $lock->execute(["serving:$today:$lane"]);
 
@@ -233,6 +249,9 @@ try {
             respond(400, ['success' => false, 'message' => 'A valid ticket ID and terminal status are required']);
         }
 
+        $conn->beginTransaction();
+        $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
+        $dailyLock->execute(["daily-operations:$today"]);
         $stmt = $conn->prepare(
             "UPDATE public.queue_tickets
              SET status = ?, completed_at = CURRENT_TIMESTAMP
@@ -241,15 +260,103 @@ try {
         );
         $stmt->execute([$status, $ticketId, $today]);
         if (!$stmt->fetchColumn()) {
+            $conn->rollBack();
             respond(409, ['success' => false, 'message' => 'Ticket is no longer being served']);
         }
+        $conn->commit();
         respond(200, ['success' => true]);
     }
 
+    if ($actionType === 'recall_ticket') {
+        $ticketId = filter_var($input['ticket_id'] ?? null, FILTER_VALIDATE_INT);
+        if (!$ticketId) {
+            respond(400, ['success' => false, 'message' => 'A valid ticket ID is required']);
+        }
+
+        $conn->beginTransaction();
+        $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
+        $dailyLock->execute(["daily-operations:$today"]);
+        $stmt = $conn->prepare(
+            "UPDATE public.queue_tickets
+             SET recall_count = recall_count + 1
+             WHERE ticket_id = ? AND service_date = ? AND status = 'serving' AND recall_count < 3
+             RETURNING ticket_id, ticket_number, recall_count"
+        );
+        $stmt->execute([$ticketId, $today]);
+        $ticket = $stmt->fetch();
+        if (!$ticket) {
+            $current = $conn->prepare(
+                'SELECT status, recall_count FROM public.queue_tickets WHERE ticket_id = ? AND service_date = ?'
+            );
+            $current->execute([$ticketId, $today]);
+            $existingTicket = $current->fetch();
+            $conn->rollBack();
+            if (!$existingTicket) {
+                respond(404, ['success' => false, 'message' => 'Ticket not found in today\'s queue']);
+            }
+            if ((int) $existingTicket['recall_count'] >= 3) {
+                respond(409, ['success' => false, 'message' => 'This ticket has reached the maximum of 3 recalls.']);
+            }
+            respond(409, ['success' => false, 'message' => 'Only a currently serving ticket can be recalled.']);
+        }
+
+        $conn->commit();
+        respond(200, ['success' => true, 'data' => $ticket]);
+    }
+
     if ($actionType === 'reset_day') {
-        $stmt = $conn->prepare('DELETE FROM public.queue_tickets WHERE service_date = ?');
-        $stmt->execute([$today]);
-        respond(200, ['success' => true]);
+        $conn->beginTransaction();
+        $lock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
+        $lock->execute(["daily-operations:$today"]);
+
+        $archive = $conn->prepare(
+            "INSERT INTO public.daily_reports
+                (report_date, total_tickets, completed_tickets, cancelled_tickets,
+                 waiting_tickets, serving_tickets, regular_tickets, priority_tickets,
+                 service_breakdown, lane_breakdown, status_breakdown)
+             SELECT ?, COUNT(*),
+                    COUNT(*) FILTER (WHERE status = 'completed'),
+                    COUNT(*) FILTER (WHERE status = 'cancelled'),
+                    COUNT(*) FILTER (WHERE status = 'waiting'),
+                    COUNT(*) FILTER (WHERE status = 'serving'),
+                    COUNT(*) FILTER (WHERE lane = 'Regular'),
+                    COUNT(*) FILTER (WHERE lane = 'Priority'),
+                    COALESCE((
+                        SELECT jsonb_object_agg(service_name, ticket_count)
+                        FROM (
+                            SELECT transaction_type AS service_name, COUNT(*) AS ticket_count
+                            FROM public.queue_tickets
+                            WHERE service_date = ?
+                            GROUP BY transaction_type
+                        ) AS services
+                    ), '{}'::jsonb),
+                    COALESCE((
+                        SELECT jsonb_object_agg(lane_name, ticket_count)
+                        FROM (
+                            SELECT lane AS lane_name, COUNT(*) AS ticket_count
+                            FROM public.queue_tickets
+                            WHERE service_date = ?
+                            GROUP BY lane
+                        ) AS lanes
+                    ), '{}'::jsonb),
+                    COALESCE((
+                        SELECT jsonb_object_agg(status_name, ticket_count)
+                        FROM (
+                            SELECT status AS status_name, COUNT(*) AS ticket_count
+                            FROM public.queue_tickets
+                            WHERE service_date = ?
+                            GROUP BY status
+                        ) AS statuses
+                    ), '{}'::jsonb)
+             FROM public.queue_tickets
+             WHERE service_date = ?"
+        );
+        $archive->execute([$today, $today, $today, $today, $today]);
+
+        $delete = $conn->prepare('DELETE FROM public.queue_tickets WHERE service_date = ?');
+        $delete->execute([$today]);
+        $conn->commit();
+        respond(200, ['success' => true, 'archived_tickets' => $delete->rowCount()]);
     }
 
     respond(400, ['success' => false, 'message' => 'Unknown action']);

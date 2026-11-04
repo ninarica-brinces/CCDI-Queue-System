@@ -196,10 +196,11 @@ try {
         }
 
         $student = $conn->prepare(
-            "SELECT student_id, btrim(first_name) || ' ' || btrim(last_name) AS full_name,
-                    course, address, year_level
-             FROM public.ccdi_students
-             WHERE lower(btrim(student_id)) = lower(btrim(?))
+            "SELECT student_number AS student_id,
+                    btrim(first_name) || ' ' || btrim(last_name) AS full_name,
+                    NULL AS course, NULL AS address, NULL AS year_level
+             FROM public.student_profiles
+             WHERE lower(btrim(student_number)) = lower(btrim(?))
                AND lower(btrim(first_name) || ' ' || btrim(last_name)) = lower(btrim(?))
              LIMIT 1"
         );
@@ -239,9 +240,10 @@ try {
         ];
         if ($role === 'student') {
             $student = $conn->prepare(
-                "SELECT student_id, btrim(first_name) || ' ' || btrim(last_name) AS full_name,
-                        course, address, year_level
-                 FROM public.ccdi_students WHERE student_id = ? LIMIT 1"
+                "SELECT student_number AS student_id,
+                        btrim(first_name) || ' ' || btrim(last_name) AS full_name,
+                        NULL AS course, NULL AS address, NULL AS year_level
+                 FROM public.student_profiles WHERE student_number = ? LIMIT 1"
             );
             $student->execute([$identity['student_id'] ?? '']);
             $profile = $student->fetch();
@@ -330,10 +332,11 @@ try {
         $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
         $dailyLock->execute(["daily-operations:$today"]);
         $student = $conn->prepare(
-            "SELECT student_id, btrim(first_name) || ' ' || btrim(last_name) AS full_name,
-                    course, address, year_level
-             FROM public.ccdi_students
-             WHERE lower(btrim(student_id)) = lower(btrim(?))
+            "SELECT student_number AS student_id,
+                    btrim(first_name) || ' ' || btrim(last_name) AS full_name,
+                    NULL AS course, NULL AS address, NULL AS year_level
+             FROM public.student_profiles
+             WHERE lower(btrim(student_number)) = lower(btrim(?))
                AND lower(btrim(first_name) || ' ' || btrim(last_name)) = lower(btrim(?))
              LIMIT 1"
         );
@@ -381,6 +384,18 @@ try {
             $conn->rollBack();
             respond(400, ['success' => false, 'message' => 'Select a supported tuition payment option']);
         }
+        if ($paymentPercentage !== '') {
+            if (
+                !preg_match('/^(\d+(?:\.\d+)?)%?$/D', $paymentPercentage, $matches) ||
+                (float) $matches[1] > 100
+            ) {
+                $conn->rollBack();
+                respond(400, ['success' => false, 'message' => 'Payment percentage must be a number from 0 to 100.']);
+            }
+        } elseif ($payment === 'Partial Payment') {
+            $conn->rollBack();
+            respond(400, ['success' => false, 'message' => 'A percentage is required for partial payment.']);
+        }
 
         $studentLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
         $studentLock->execute(["student:$today:{$profile['student_id']}"]);
@@ -409,7 +424,9 @@ try {
         $count = $conn->prepare(
             "SELECT
                 (SELECT COUNT(*) FROM public.queue_tickets WHERE lane = ? AND service_date = ?) +
-                (SELECT COALESCE(SUM(COALESCE((lane_breakdown ->> ?)::integer, 0)), 0)
+                (SELECT COALESCE(SUM(
+                    CASE WHEN ? = 'Priority' THEN priority_tickets ELSE regular_tickets END
+                 ), 0)
                  FROM public.daily_reports WHERE report_date = ?)"
         );
         $count->execute([$lane, $today, $lane, $today]);
@@ -497,6 +514,66 @@ try {
         $conn->beginTransaction();
         $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
         $dailyLock->execute(["daily-operations:$today"]);
+        $current = $conn->prepare(
+            "SELECT ticket_id, ticket_number, student_id, transaction_type, payment_method, payment_percentage
+             FROM public.queue_tickets
+             WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
+             FOR UPDATE"
+        );
+        $current->execute([$ticketId, $today]);
+        $ticket = $current->fetch();
+        if (!$ticket) {
+            $conn->rollBack();
+            respond(409, ['success' => false, 'message' => 'Ticket is no longer being served']);
+        }
+
+        if ($status === 'completed' && $ticket['transaction_type'] === 'Tuition Payment') {
+            $profile = $conn->prepare(
+                'SELECT current_balance FROM public.student_profiles WHERE student_number = ? LIMIT 1'
+            );
+            $profile->execute([$ticket['student_id']]);
+            $studentProfile = $profile->fetch();
+            if (!$studentProfile) {
+                $conn->rollBack();
+                respond(409, ['success' => false, 'message' => 'Student profile is no longer available; payment was not recorded.']);
+            }
+
+            $paymentMethod = (string) $ticket['payment_method'];
+            $customPercentage = trim((string) ($ticket['payment_percentage'] ?? ''));
+            if ($customPercentage !== '') {
+                if (!preg_match('/^(\d+(?:\.\d+)?)%?$/D', $customPercentage, $matches)) {
+                    $conn->rollBack();
+                    respond(409, ['success' => false, 'message' => 'The ticket has an invalid payment percentage; payment was not recorded.']);
+                }
+                $percentage = (float) $matches[1];
+            } else {
+                $percentage = match ($paymentMethod) {
+                    'Full Payment' => 100.0,
+                    'Partial Payment (50%)' => 50.0,
+                    'Partial Payment (25%)' => 25.0,
+                    'Promissory Note', 'Promissory' => 0.0,
+                    default => null,
+                };
+            }
+
+            if ($percentage === null || $percentage < 0 || $percentage > 100) {
+                $conn->rollBack();
+                respond(409, ['success' => false, 'message' => 'The ticket has no valid payment percentage; payment was not recorded.']);
+            }
+
+            if (!is_numeric($studentProfile['current_balance']) || (float) $studentProfile['current_balance'] < 0) {
+                $conn->rollBack();
+                respond(409, ['success' => false, 'message' => 'The student profile has an invalid balance; payment was not recorded.']);
+            }
+
+            $amountPaid = round((float) $studentProfile['current_balance'] * $percentage / 100, 2);
+            $history = $conn->prepare(
+                'INSERT INTO public.payment_histories (reference_number, student_id, amount_paid)
+                 VALUES (?, ?, ?)'
+            );
+            $history->execute([$ticket['ticket_number'], $ticket['student_id'], $amountPaid]);
+        }
+
         $stmt = $conn->prepare(
             "UPDATE public.queue_tickets
              SET status = ?, completed_at = CURRENT_TIMESTAMP
@@ -555,39 +632,19 @@ try {
         $archive = $conn->prepare(
             "INSERT INTO public.daily_reports
                 (report_date, total_tickets, completed_tickets, cancelled_tickets,
-                 waiting_tickets, serving_tickets, regular_tickets, priority_tickets,
-                 service_breakdown, lane_breakdown, status_breakdown)
+                 waiting_tickets, serving_tickets, regular_tickets, priority_tickets)
              SELECT ?, COUNT(*),
                     COUNT(*) FILTER (WHERE status = 'completed'),
                     COUNT(*) FILTER (WHERE status = 'cancelled'),
                     COUNT(*) FILTER (WHERE status = 'waiting'),
                     COUNT(*) FILTER (WHERE status = 'serving'),
                     COUNT(*) FILTER (WHERE lane = 'Regular'),
-                    COUNT(*) FILTER (WHERE lane = 'Priority'),
-                    COALESCE((
-                        SELECT jsonb_object_agg(service_name, ticket_count)
-                        FROM (
-                            SELECT transaction_type AS service_name, COUNT(*) AS ticket_count
-                            FROM public.queue_tickets WHERE service_date = ? GROUP BY transaction_type
-                        ) AS services
-                    ), '{}'::jsonb),
-                    COALESCE((
-                        SELECT jsonb_object_agg(lane_name, ticket_count)
-                        FROM (
-                            SELECT lane AS lane_name, COUNT(*) AS ticket_count
-                            FROM public.queue_tickets WHERE service_date = ? GROUP BY lane
-                        ) AS lanes
-                    ), '{}'::jsonb),
-                    COALESCE((
-                        SELECT jsonb_object_agg(status_name, ticket_count)
-                        FROM (
-                            SELECT status AS status_name, COUNT(*) AS ticket_count
-                            FROM public.queue_tickets WHERE service_date = ? GROUP BY status
-                        ) AS statuses
-                    ), '{}'::jsonb)
-             FROM public.queue_tickets WHERE service_date = ?"
+                    COUNT(*) FILTER (WHERE lane = 'Priority')
+             FROM public.queue_tickets
+             WHERE service_date = ?
+             HAVING COUNT(*) > 0"
         );
-        $archive->execute([$today, $today, $today, $today, $today]);
+        $archive->execute([$today, $today]);
         $delete = $conn->prepare('DELETE FROM public.queue_tickets WHERE service_date = ?');
         $delete->execute([$today]);
         $conn->commit();

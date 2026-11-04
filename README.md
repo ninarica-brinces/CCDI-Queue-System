@@ -42,13 +42,14 @@ trimmed Student ID and registered full-name match. Sessions use HttpOnly,
 SameSite cookies and expire after 30 minutes of inactivity.
 
 Queue requests and their requested payment details are stored in
-`queue_tickets`; cashier completion updates that ticket's status. Resetting the
-operational day archives status, lane, and service totals in `daily_reports`
-before clearing that day's tickets. There is no separate payment ledger or
-captured amount/receipt record in the current schema.
+`queue_tickets`; cashier completion updates that ticket's status and records
+completed tuition payments in `payment_histories` using the ticket number as
+the reference. The amount is calculated from `student_profiles.current_balance`
+and the ticket's payment percentage. Resetting the operational day archives
+ticket and status totals in `daily_reports` before clearing that day's tickets.
 
-Ticket creation requires an exact Student ID and full name match in
-`ccdi_students`; student lookup suggestions are not exposed. The API limits
+Ticket creation requires an exact student number and full name match in
+`student_profiles`; student lookup suggestions are not exposed. The API limits
 each operational day to 100 issued tickets and allows up to three recalls per
 serving ticket. Detailed payment fields for non-tuition services are withheld
 after a ticket leaves the active queue.

@@ -55,7 +55,9 @@ The API accepts `complete_ticket` as the completion-specific action as well as
 include the session CSRF token returned by login or `auth_status`.
 
 Ticket creation requires an exact student number and full name match in
-`student_profiles`; student lookup suggestions are not exposed. The API limits
+`student_profiles`. Name matching is case-insensitive, ignores extra whitespace,
+and compares the submitted name with the combined first and last name; student
+lookup suggestions are not exposed. The API limits
 each operational day to 100 issued tickets and allows up to three recalls per
 serving ticket. Detailed payment fields for non-tuition services are withheld
 after a ticket leaves the active queue.

@@ -313,12 +313,12 @@ $conn = null;
 
         $student = $conn->prepare(
             "SELECT student_number AS student_id,
-                    btrim(first_name) || ' ' || btrim(last_name) AS full_name,
+                    concat_ws(' ', NULLIF(btrim(first_name), ''), NULLIF(btrim(last_name), '')) AS full_name,
                     current_balance, NULL AS course, NULL AS address, NULL AS year_level
              FROM public.student_profiles
              WHERE lower(btrim(student_number)) = lower(btrim(?))
                AND regexp_replace(
-                     lower(btrim(first_name) || ' ' || btrim(last_name)),
+                     lower(concat_ws(' ', NULLIF(btrim(first_name), ''), NULLIF(btrim(last_name), ''))),
                      '[[:space:]]+', ' ', 'g'
                    ) = regexp_replace(lower(btrim(?)), '[[:space:]]+', ' ', 'g')
              LIMIT 1"

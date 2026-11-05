@@ -1,18 +1,21 @@
 <?php
-$host = getenv('DB_HOST');
+$configuredHost = getenv('DB_HOST');
+$host = $configuredHost === false ? '' : trim($configuredHost);
 $configuredPort = getenv('DB_PORT');
-$port = $configuredPort === false || $configuredPort === '' ? 5432 : $configuredPort;
-$dbname = getenv('DB_NAME');
+$port = $configuredPort === false || trim($configuredPort) === '' ? '5432' : trim($configuredPort);
+$configuredDbname = getenv('DB_NAME');
+$dbname = $configuredDbname === false ? '' : trim($configuredDbname);
 $configuredSslmode = getenv('DB_SSLMODE');
-$sslmode = $configuredSslmode === false || $configuredSslmode === '' ? 'require' : $configuredSslmode;
-$user = getenv('DB_USER');
+$sslmode = $configuredSslmode === false || trim($configuredSslmode) === '' ? 'require' : trim($configuredSslmode);
+$configuredUser = getenv('DB_USER');
+$user = $configuredUser === false ? '' : trim($configuredUser);
 $password = getenv('DB_PASSWORD');
 
 $requiredConfig = [
     'DB_HOST' => $host,
     'DB_NAME' => $dbname,
     'DB_USER' => $user,
-    'DB_PASSWORD' => $password,
+    'DB_PASSWORD' => $password === false ? '' : $password,
 ];
 $missingConfig = array_filter(
     $requiredConfig,

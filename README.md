@@ -10,7 +10,8 @@ port, and username from Supabase **Connect** (the username commonly includes
 the project reference):
 
 - `DB_HOST` (required; session pooler hostname, not `db.<project-ref>.supabase.co`)
-- `DB_PORT` (required from the pooler settings; commonly `5432`)
+- `DB_PORT` (optional; use the port shown by Supabase, commonly `5432` for the
+  session pooler or `6543` for the transaction pooler; defaults to `5432`)
 - `DB_NAME` (required; Supabase database name, commonly `postgres`)
 - `DB_USER` (required; use the exact pooler username)
 - `DB_PASSWORD` (required; keep this secret and do not commit it)
@@ -43,10 +44,11 @@ SameSite cookies and expire after 30 minutes of inactivity.
 
 Queue requests and their requested payment details are stored in
 `queue_tickets`; cashier completion updates that ticket's status and records
-completed tuition payments in `payment_histories` using the ticket number as
-the reference. The amount is calculated from `student_profiles.current_balance`
-and the ticket's payment percentage. Resetting the operational day archives
-ticket and status totals in `daily_reports` before clearing that day's tickets.
+completed tuition payments in `payment_activity_records` using the ticket
+number as the reference. The amount is calculated from
+`student_profiles.current_balance` and the ticket's payment percentage.
+Resetting the operational day archives ticket and status totals in
+`daily_reports` before clearing that day's tickets.
 
 Ticket creation requires an exact student number and full name match in
 `student_profiles`; student lookup suggestions are not exposed. The API limits

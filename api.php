@@ -191,7 +191,34 @@ $conn = null;
         respond(405, ['success' => false, 'message' => 'Method not allowed']);
     }
 
-    require_once __DIR__ . '/db.php';
+    $routes = [
+        'GET' => ['auth_status', 'get_queue_state', 'get_state', 'get_payment_details'],
+        'POST' => [
+            'cashier_login',
+            'student_login',
+            'logout',
+            'create_ticket',
+            'call_next',
+            'update_status',
+            'recall_ticket',
+            'reset_day',
+        ],
+    ];
+    if (!in_array($action, $routes[$method], true)) {
+        $knownActions = array_merge(...array_values($routes));
+        if (in_array($action, $knownActions, true)) {
+            respond(405, ['success' => false, 'message' => 'Action is not supported for this request method']);
+        }
+        respond(400, ['success' => false, 'message' => 'Unknown action']);
+    }
+
+    $conn = null;
+    if (
+        !in_array($action, ['logout', 'auth_status'], true) ||
+        ($action === 'auth_status' && ($_SESSION['role'] ?? '') === 'student')
+    ) {
+        require_once __DIR__ . '/db.php';
+    }
 
     if ($method === 'POST' && $action === 'cashier_login') {
         $username = $input['username'] ?? '';
@@ -388,7 +415,7 @@ $conn = null;
         }
         $histories = $conn->prepare(
             'SELECT reference_number, amount_paid, created_at
-             FROM public.payment_histories WHERE student_id = ?
+             FROM public.payment_activity_records WHERE student_id = ?
              ORDER BY created_at DESC LIMIT 50'
         );
         $histories->execute([$studentId]);
@@ -407,10 +434,6 @@ $conn = null;
             'data' => $historyRows
         ]);
     }
-    if ($method === 'GET') {
-        respond(400, ['success' => false, 'message' => 'Unknown action']);
-    }
-
     if ($action === 'create_ticket') {
         if (!in_array($_SESSION['role'] ?? '', ['student', 'cashier'], true)) {
             respond(401, ['success' => false, 'message' => 'Authentication required']);
@@ -727,7 +750,7 @@ $conn = null;
 
             $amountPaid = round((float) $studentProfile['current_balance'] * $percentage / 100, 2);
             $history = $conn->prepare(
-                'INSERT INTO public.payment_histories (reference_number, student_id, amount_paid)
+                'INSERT INTO public.payment_activity_records (reference_number, student_id, amount_paid)
                  VALUES (?, ?, ?)'
             );
             $history->execute([$ticket['ticket_number'], $ticket['student_id'], $amountPaid]);

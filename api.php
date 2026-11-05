@@ -234,7 +234,7 @@ $conn = null;
     }
 
     $routes = [
-        'GET' => ['auth_status', 'get_queue_state', 'get_state', 'get_payment_details'],
+        'GET' => ['auth_status', 'get_queue_state', 'get_state', 'get_payment_details', 'get_cashier_payment_histories'],
         'POST' => [
             'cashier_login',
             'student_login',
@@ -476,6 +476,163 @@ $conn = null;
             'data' => $historyRows
         ]);
     }
+
+    if ($method === 'GET' && $action === 'get_cashier_payment_histories') {
+        requireRole('cashier');
+
+        $range = $_GET['range'] ?? 'all';
+        if (!is_string($range)) {
+            respond(400, ['success' => false, 'message' => 'Invalid payment history date range']);
+        }
+        if (!in_array($range, ['all', 'today', '7days', '30days'], true)) {
+            respond(400, ['success' => false, 'message' => 'Invalid payment history date range']);
+        }
+
+        $statusInput = $_GET['status'] ?? 'all';
+        if (!is_string($statusInput)) {
+            respond(400, ['success' => false, 'message' => 'Invalid payment history status']);
+        }
+        $status = strtolower(trim($statusInput));
+        if (!in_array($status, ['all', 'paid', 'pending'], true)) {
+            respond(400, ['success' => false, 'message' => 'Invalid payment history status']);
+        }
+
+        $searchInput = $_GET['search'] ?? '';
+        if (!is_string($searchInput)) {
+            respond(400, ['success' => false, 'message' => 'Invalid payment history search']);
+        }
+        $search = trim($searchInput);
+        if (strlen($search) > 120) {
+            respond(400, ['success' => false, 'message' => 'Payment history search is too long']);
+        }
+
+        $timezone = new DateTimeZone(date_default_timezone_get());
+        $localToday = new DateTimeImmutable('today', $timezone);
+        $startDate = match ($range) {
+            'today' => $localToday,
+            '7days' => $localToday->modify('-6 days'),
+            '30days' => $localToday->modify('-29 days'),
+            default => null,
+        };
+        $startOfDay = $localToday->format('Y-m-d\TH:i:sP');
+        $endOfDay = $localToday->modify('+1 day')->format('Y-m-d\TH:i:sP');
+
+        $where = [];
+        $parameters = [];
+        if ($search !== '') {
+            $where[] = "(reference_number ILIKE ? OR student_id ILIKE ? OR student_name ILIKE ?
+                         OR COALESCE(course, '') ILIKE ? OR COALESCE(year_level, '') ILIKE ?
+                         OR payment_method ILIKE ? OR cashier_staff ILIKE ?)";
+            $searchPattern = '%' . $search . '%';
+            array_push(
+                $parameters,
+                $searchPattern,
+                $searchPattern,
+                $searchPattern,
+                $searchPattern,
+                $searchPattern,
+                $searchPattern,
+                $searchPattern
+            );
+        }
+        if ($status !== 'all') {
+            $where[] = 'status = ?';
+            $parameters[] = $status;
+        }
+        if ($startDate !== null) {
+            $where[] = 'created_at >= ? AND created_at < ?';
+            $parameters[] = $startDate->format('Y-m-d\TH:i:sP');
+            $parameters[] = $endOfDay;
+        }
+        $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+
+        $countQuery = $conn->prepare('SELECT COUNT(*) FROM public.payment_histories' . $whereSql);
+        $countQuery->execute($parameters);
+        $filteredCount = (int) $countQuery->fetchColumn();
+
+        $pageSize = 50;
+        $exportAll = ($_GET['all'] ?? '') === '1';
+        $page = filter_var($_GET['page'] ?? '1', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($page === false) {
+            respond(400, ['success' => false, 'message' => 'Invalid payment history page']);
+        }
+        $page = min($page, max(1, (int) ceil($filteredCount / $pageSize)));
+        $historyQuery = $conn->prepare(
+            'SELECT reference_number, student_id, student_name, course, year_level, amount_paid,
+                    payment_method, created_at, cashier_staff, status
+             FROM public.payment_histories' . $whereSql .
+            ' ORDER BY created_at DESC, reference_number DESC' .
+            ($exportAll ? '' : ' LIMIT ' . $pageSize . ' OFFSET ' . (($page - 1) * $pageSize))
+        );
+        $historyQuery->execute($parameters);
+        $historyRows = $historyQuery->fetchAll();
+
+        $metricsQuery = $conn->prepare(
+            "SELECT COALESCE(SUM(amount_paid) FILTER (WHERE status = 'paid'), 0) AS total_collections,
+                    COUNT(*) AS total_transactions,
+                    COALESCE(SUM(amount_paid) FILTER (
+                        WHERE status = 'paid' AND created_at >= ? AND created_at < ?
+                    ), 0) AS daily_revenue
+             FROM public.payment_histories"
+        );
+        $metricsQuery->execute([$startOfDay, $endOfDay]);
+        $metrics = $metricsQuery->fetch();
+
+        $queueCountQuery = $conn->prepare(
+            "SELECT COUNT(*) FROM public.queue_tickets
+             WHERE service_date = ? AND status IN ('waiting', 'serving')"
+        );
+        $queueCountQuery->execute([$today]);
+
+        $activityQuery = $conn->prepare(
+            "SELECT (created_at AT TIME ZONE ?)::date AS activity_date,
+                    COALESCE(SUM(amount_paid) FILTER (WHERE status = 'paid'), 0) AS revenue,
+                    COUNT(*) AS transactions
+             FROM public.payment_histories
+             WHERE created_at >= ? AND created_at < ?
+             GROUP BY (created_at AT TIME ZONE ?)::date
+             ORDER BY activity_date"
+        );
+        $activityQuery->execute([
+            date_default_timezone_get(),
+            $localToday->modify('-6 days')->format('Y-m-d\TH:i:sP'),
+            $endOfDay,
+            date_default_timezone_get(),
+        ]);
+        $activityByDate = [];
+        foreach ($activityQuery->fetchAll() as $activityRow) {
+            $activityByDate[$activityRow['activity_date']] = $activityRow;
+        }
+        $activity = [];
+        for ($daysAgo = 6; $daysAgo >= 0; $daysAgo--) {
+            $activityDate = $localToday->modify("-$daysAgo days")->format('Y-m-d');
+            $activity[] = $activityByDate[$activityDate] ?? [
+                'activity_date' => $activityDate,
+                'revenue' => 0,
+                'transactions' => 0,
+            ];
+        }
+
+        respond(200, [
+            'success' => true,
+            'data' => $historyRows,
+            'pagination' => [
+                'page' => $page,
+                'page_size' => $pageSize,
+                'total' => $filteredCount,
+                'pages' => max(1, (int) ceil($filteredCount / $pageSize)),
+                'export_all' => $exportAll,
+            ],
+            'metrics' => [
+                'total_collections' => (float) $metrics['total_collections'],
+                'total_transactions' => (int) $metrics['total_transactions'],
+                'daily_revenue' => (float) $metrics['daily_revenue'],
+                'active_queue_count' => (int) $queueCountQuery->fetchColumn(),
+            ],
+            'activity' => $activity,
+        ]);
+    }
+
     if ($action === 'create_ticket') {
         if (!in_array($_SESSION['role'] ?? '', ['student', 'cashier'], true)) {
             respond(401, ['success' => false, 'message' => 'Authentication required']);
@@ -741,7 +898,8 @@ $conn = null;
         $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
         $dailyLock->execute(["daily-operations:$today"]);
         $current = $conn->prepare(
-            "SELECT ticket_id, ticket_number, student_id, transaction_type, payment_method, payment_percentage
+            "SELECT ticket_id, ticket_number, student_id, student_name, course, year_level,
+                    transaction_type, payment_method, payment_percentage
              FROM public.queue_tickets
              WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
              FOR UPDATE"
@@ -798,6 +956,23 @@ $conn = null;
                  VALUES (?, ?, ?)'
             );
             $history->execute([$ticket['ticket_number'], $ticket['student_id'], $amountPaid]);
+            $cashierHistory = $conn->prepare(
+                "INSERT INTO public.payment_histories
+                    (reference_number, student_id, student_name, course, year_level, amount_paid,
+                     payment_method, cashier_staff, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $cashierHistory->execute([
+                $ticket['ticket_number'],
+                $ticket['student_id'],
+                $ticket['student_name'],
+                $ticket['course'],
+                $ticket['year_level'],
+                $amountPaid,
+                $paymentMethod,
+                (string) ($_SESSION['identity']['staff_id'] ?? 'Cashier'),
+                $amountPaid > 0 ? 'paid' : 'pending',
+            ]);
         }
 
         $stmt = $conn->prepare(

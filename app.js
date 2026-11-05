@@ -3,6 +3,10 @@ import { QueueManager } from './queueManager.js';
 
 let elements = {};
 let queueManager;
+let paymentHistoryPage = 1;
+let paymentHistoryRequestId = 0;
+let paymentHistorySearchTimer;
+let paymentHistoryRefreshTimer;
 
 function createSafeElement(tag, className, textContent = '') {
   const el = document.createElement(tag);
@@ -79,7 +83,9 @@ function switchTab(targetPage, activeLink) {
 
 function renderUI(state) {
   renderQueuePage(state);
-  renderTransactionsPage(state);
+  elements.historyActiveQueue.textContent =
+    state.regularQueue.length + state.priorityQueue.length +
+    Number(Boolean(state.currentRegular)) + Number(Boolean(state.currentPriority));
   renderReportsPage(state);
 }
 
@@ -179,45 +185,195 @@ function renderTable(tbody, queue, emptyText) {
   });
 }
 
-function renderTransactionsPage(state) {
-  const tbody = elements.txTableBody;
-  tbody.innerHTML = '';
+function formatCurrency(value) {
+  return Number(value || 0).toLocaleString('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
 
-  const query = elements.txSearchInput.value.toLowerCase().trim();
-  const filterStatus = elements.txFilterStatus.value;
+function renderSparkline(container, values) {
+  container.replaceChildren();
+  if (!values.length) return;
 
-  const filtered = state.transactions.filter(tx => {
-    const matchesSearch = tx.id.toLowerCase().includes(query) || tx.studentName.toLowerCase().includes(query);
-    const matchesStatus = filterStatus === 'ALL' || tx.status === filterStatus;
-    return matchesSearch && matchesStatus;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 100 32');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('focusable', 'false');
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const spread = max - min || 1;
+  const points = values.map((value, index) => {
+    const x = values.length === 1 ? 50 : index * 100 / (values.length - 1);
+    const y = 28 - ((value - min) / spread) * 24;
+    return `${x},${y}`;
+  }).join(' ');
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  line.setAttribute('points', points);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', 'currentColor');
+  line.setAttribute('stroke-width', '2');
+  line.setAttribute('vector-effect', 'non-scaling-stroke');
+  svg.appendChild(line);
+  container.appendChild(svg);
+}
+
+function renderPaymentActivity(activity) {
+  const chart = elements.paymentActivityChart;
+  chart.replaceChildren();
+  const days = activity.slice(-7);
+  const peak = Math.max(...days.map(day => Number(day.revenue) || 0), 1);
+  const total = days.reduce((sum, day) => sum + (Number(day.revenue) || 0), 0);
+  elements.paymentActivitySummary.textContent = formatCurrency(total);
+
+  if (!days.length) {
+    chart.appendChild(createSafeElement('p', 'payment-chart-empty', 'No payment activity in the last seven days.'));
+  }
+
+  days.forEach(day => {
+    const column = createSafeElement('div', 'payment-chart-column');
+    const amount = Number(day.revenue) || 0;
+    const bar = createSafeElement('div', 'payment-chart-bar');
+    bar.style.height = `${Math.max(amount > 0 ? 8 : 2, amount / peak * 100)}%`;
+    bar.title = `${day.activity_date}: ${formatCurrency(amount)}`;
+    bar.setAttribute('aria-label', `${day.activity_date}: ${formatCurrency(amount)}, ${day.transactions} transactions`);
+    const label = createSafeElement('span', 'payment-chart-label', String(day.activity_date).slice(5));
+    column.append(bar, label);
+    chart.appendChild(column);
   });
 
-  if (filtered.length === 0) {
-    const tr = createSafeElement('tr');
-    const td = createSafeElement('td', 'empty-msg', 'No payment history found.');
-    td.colSpan = 8;
-    tr.appendChild(td);
-    tbody.appendChild(tr);
+  renderSparkline(elements.paymentCollectionsSpark, days.map(day => Number(day.revenue) || 0));
+  renderSparkline(elements.paymentDailySpark, days.map(day => Number(day.revenue) || 0));
+  renderSparkline(elements.paymentTransactionsSpark, days.map(day => Number(day.transactions) || 0));
+}
+
+function renderPaymentHistoryRows(records) {
+  const tbody = elements.txTableBody;
+  tbody.replaceChildren();
+  if (!records.length) {
+    const row = createSafeElement('tr');
+    row.appendChild(createSafeElement('td', 'empty-msg', 'No payment history matches these filters.'));
+    row.firstElementChild.colSpan = 9;
+    tbody.appendChild(row);
     return;
   }
 
-  filtered.slice().reverse().forEach(tx => {
-    const tr = createSafeElement('tr');
-    tr.appendChild(createSafeElement('td', '', tx.id));
-    tr.appendChild(createSafeElement('td', '', tx.studentName));
-    tr.appendChild(createSafeElement('td', '', tx.lane));
-    tr.appendChild(createSafeElement('td', '', tx.service));
-    tr.appendChild(createSafeElement('td', '', formatPaymentDetails(tx)));
-    tr.appendChild(createSafeElement('td', '', tx.time));
-    tr.appendChild(createSafeElement('td', '', tx.endTime));
+  records.forEach(record => {
+    const row = createSafeElement('tr');
+    const courseYear = [record.course, record.year_level].filter(Boolean).join(' / ') || '—';
+    const createdAt = new Date(record.created_at);
+    const formattedDate = Number.isNaN(createdAt.getTime())
+      ? record.created_at
+      : createdAt.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+    const fields = [
+      record.reference_number,
+      record.student_id,
+      record.student_name,
+      courseYear,
+      formatCurrency(record.amount_paid),
+      record.payment_method,
+      formattedDate,
+      record.cashier_staff
+    ];
+    fields.forEach(value => row.appendChild(createSafeElement('td', '', value || '—')));
 
-    const tdStatus = createSafeElement('td');
-    const statusClass = tx.status === 'Completed' ? 'badge-status status-completed' : 'badge-status status-skipped';
-    tdStatus.appendChild(createSafeElement('span', statusClass, tx.status));
-    tr.appendChild(tdStatus);
-
-    tbody.appendChild(tr);
+    const statusCell = createSafeElement('td');
+    const isPaid = record.status === 'paid';
+    statusCell.appendChild(createSafeElement(
+      'span',
+      `badge-status ${isPaid ? 'status-completed' : 'status-pending'}`,
+      isPaid ? 'Paid' : 'Pending'
+    ));
+    row.appendChild(statusCell);
+    tbody.appendChild(row);
   });
+}
+
+async function fetchPaymentHistories({ exportAll = false } = {}) {
+  const requestId = ++paymentHistoryRequestId;
+  const params = new URLSearchParams({
+    action: 'get_cashier_payment_histories',
+    search: elements.txSearchInput.value.trim(),
+    range: elements.txFilterRange.value,
+    status: elements.txFilterStatus.value,
+    page: String(paymentHistoryPage)
+  });
+  if (exportAll) params.set('all', '1');
+  if (!exportAll) elements.paymentHistoryMessage.textContent = 'Loading payment history…';
+
+  try {
+    const response = await fetch(`${APP_CONFIG.apiUrl}?${params}`, {
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success || !Array.isArray(result.data)) {
+      throw new Error(result.message || 'Unable to load payment histories.');
+    }
+
+    if (exportAll) return result.data;
+    if (requestId !== paymentHistoryRequestId) return [];
+
+    elements.historyTotalCollections.textContent = formatCurrency(result.metrics.total_collections);
+    elements.historyTotalTransactions.textContent =
+      Number(result.metrics.total_transactions).toLocaleString('en-PH');
+    elements.historyDailyRevenue.textContent = formatCurrency(result.metrics.daily_revenue);
+    elements.historyActiveQueue.textContent =
+      Number(result.metrics.active_queue_count).toLocaleString('en-PH');
+    renderPaymentActivity(result.activity);
+    renderPaymentHistoryRows(result.data);
+
+    const pagination = result.pagination;
+    paymentHistoryPage = pagination.page;
+    elements.paymentHistoryPageInfo.textContent =
+      `Page ${pagination.page} of ${pagination.pages} · ${pagination.total.toLocaleString('en-PH')} records`;
+    elements.paymentHistoryPrevious.disabled = pagination.page <= 1;
+    elements.paymentHistoryNext.disabled = pagination.page >= pagination.pages;
+    elements.paymentHistoryMessage.textContent =
+      pagination.total === 0 ? 'No records found.' : `${pagination.total.toLocaleString('en-PH')} matching records`;
+    return result.data;
+  } catch (error) {
+    if (exportAll) throw error;
+    if (requestId !== paymentHistoryRequestId) return [];
+    console.error('Failed to load payment histories:', error);
+    elements.paymentHistoryMessage.textContent = error.message || 'Unable to load payment histories.';
+    renderPaymentHistoryRows([]);
+    elements.txTableBody.firstElementChild.firstElementChild.textContent =
+      'Payment history is unavailable. Check the database migration and try again.';
+    return [];
+  }
+}
+
+function exportPaymentHistoryCsv(records) {
+  const headers = [
+    'Transaction / Ref', 'Student ID', 'Student Name', 'Course / Year',
+    'Amount Paid', 'Payment Method', 'Date & Time', 'Cashier Staff', 'Status'
+  ];
+  const rows = records.map(record => [
+    record.reference_number,
+    record.student_id,
+    record.student_name,
+    [record.course, record.year_level].filter(Boolean).join(' / '),
+    Number(record.amount_paid || 0).toFixed(2),
+    record.payment_method,
+    record.created_at,
+    record.cashier_staff,
+    record.status
+  ]);
+  const csvValue = value => {
+    let text = String(value ?? '');
+    if (/^[=+\-@]/.test(text)) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+  const csv = [headers, ...rows].map(row => row.map(csvValue).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' }));
+  const link = createSafeElement('a');
+  link.href = url;
+  link.download = `ccdi-payment-histories-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function renderReportsPage(state) {
@@ -327,6 +483,7 @@ function bindEvents() {
   elements.navTransactions.addEventListener('click', (e) => {
     e.preventDefault();
     switchTab(elements.pageTransactions, elements.navTransactions);
+    fetchPaymentHistories();
   });
 
   elements.navReports.addEventListener('click', (e) => {
@@ -334,8 +491,43 @@ function bindEvents() {
     switchTab(elements.pageReports, elements.navReports);
   });
 
-  elements.txSearchInput.addEventListener('input', () => renderTransactionsPage(queueManager.getState()));
-  elements.txFilterStatus.addEventListener('change', () => renderTransactionsPage(queueManager.getState()));
+  elements.txSearchInput.addEventListener('input', () => {
+    clearTimeout(paymentHistorySearchTimer);
+    paymentHistorySearchTimer = setTimeout(() => {
+      paymentHistoryPage = 1;
+      fetchPaymentHistories();
+    }, 250);
+  });
+  [elements.txFilterRange, elements.txFilterStatus].forEach(filter => {
+    filter.addEventListener('change', () => {
+      paymentHistoryPage = 1;
+      fetchPaymentHistories();
+    });
+  });
+  elements.paymentHistoryPrevious.addEventListener('click', () => {
+    paymentHistoryPage = Math.max(1, paymentHistoryPage - 1);
+    fetchPaymentHistories();
+  });
+  elements.paymentHistoryNext.addEventListener('click', () => {
+    paymentHistoryPage++;
+    fetchPaymentHistories();
+  });
+  elements.paymentExportBtn.addEventListener('click', async () => {
+    elements.paymentExportBtn.disabled = true;
+    try {
+      const records = await fetchPaymentHistories({ exportAll: true });
+      if (records.length === 0) {
+        elements.paymentHistoryMessage.textContent = 'There are no matching records to export.';
+        return;
+      }
+      exportPaymentHistoryCsv(records);
+      elements.paymentHistoryMessage.textContent = `${records.length.toLocaleString('en-PH')} records exported.`;
+    } catch (error) {
+      elements.paymentHistoryMessage.textContent = error.message || 'Unable to export payment histories.';
+    } finally {
+      elements.paymentExportBtn.disabled = false;
+    }
+  });
 
   elements.openModalBtn.addEventListener('click', () => elements.dialog.showModal());
   elements.serviceTypeSelect.addEventListener('change', updateTuitionFields);
@@ -381,7 +573,10 @@ function bindEvents() {
   });
 
   elements.btnRegNext.addEventListener('click', async () => await queueManager.callNext('Regular'));
-  elements.btnRegComplete.addEventListener('click', async () => await queueManager.completeCurrent('Regular'));
+  elements.btnRegComplete.addEventListener('click', async () => {
+    await queueManager.completeCurrent('Regular');
+    await fetchPaymentHistories();
+  });
   elements.btnRegSkip.addEventListener('click', async () => await queueManager.skipCurrent('Regular'));
   elements.btnRegRecall.addEventListener('click', async () => {
     const active = queueManager.getState().currentRegular;
@@ -396,7 +591,10 @@ function bindEvents() {
   });
 
   elements.btnPrioNext.addEventListener('click', async () => await queueManager.callNext('Priority'));
-  elements.btnPrioComplete.addEventListener('click', async () => await queueManager.completeCurrent('Priority'));
+  elements.btnPrioComplete.addEventListener('click', async () => {
+    await queueManager.completeCurrent('Priority');
+    await fetchPaymentHistories();
+  });
   elements.btnPrioSkip.addEventListener('click', async () => await queueManager.skipCurrent('Priority'));
   elements.btnPrioRecall.addEventListener('click', async () => {
     const active = queueManager.getState().currentPriority;
@@ -416,6 +614,7 @@ function bindEvents() {
     }
     try {
       await queueManager.resetDay();
+      await fetchPaymentHistories();
       alert('Operational day reset. The daily report was archived successfully.');
     } catch (error) {
       alert(error.message);
@@ -435,7 +634,22 @@ function init() {
 
     txSearchInput: document.getElementById('txSearchInput'),
     txFilterStatus: document.getElementById('txFilterStatus'),
+    txFilterRange: document.getElementById('txFilterRange'),
     txTableBody: document.getElementById('txTableBody'),
+    historyTotalCollections: document.getElementById('historyTotalCollections'),
+    historyTotalTransactions: document.getElementById('historyTotalTransactions'),
+    historyDailyRevenue: document.getElementById('historyDailyRevenue'),
+    historyActiveQueue: document.getElementById('historyActiveQueue'),
+    paymentCollectionsSpark: document.getElementById('paymentCollectionsSpark'),
+    paymentTransactionsSpark: document.getElementById('paymentTransactionsSpark'),
+    paymentDailySpark: document.getElementById('paymentDailySpark'),
+    paymentActivityChart: document.getElementById('paymentActivityChart'),
+    paymentActivitySummary: document.getElementById('paymentActivitySummary'),
+    paymentHistoryMessage: document.getElementById('paymentHistoryMessage'),
+    paymentHistoryPageInfo: document.getElementById('paymentHistoryPageInfo'),
+    paymentHistoryPrevious: document.getElementById('paymentHistoryPrevious'),
+    paymentHistoryNext: document.getElementById('paymentHistoryNext'),
+    paymentExportBtn: document.getElementById('paymentExportBtn'),
     paymentSummary: document.getElementById('paymentSummary'),
 
     rptTotalTickets: document.getElementById('rptTotalTickets'),
@@ -570,6 +784,10 @@ async function startCashierSession(csrfToken) {
     const statusElement = document.getElementById('storageStatus');
     if (statusElement) statusElement.textContent = status;
   });
+  paymentHistoryPage = 1;
+  fetchPaymentHistories();
+  clearInterval(paymentHistoryRefreshTimer);
+  paymentHistoryRefreshTimer = setInterval(fetchPaymentHistories, 30000);
 }
 
 document.addEventListener('DOMContentLoaded', init);

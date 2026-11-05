@@ -92,8 +92,7 @@
               <span class="value" id="kpiSkipped">0</span>
               <span class="sub">Tickets</span>
             </div>
-          </div>
-        </section>
+          </section>
 
         <!-- REGULAR QUEUE SECTION -->
         <section class="queue-section">
@@ -173,35 +172,98 @@
     <div id="pageTransactions" class="page-view">
       <header>
         <div class="header-left">
-          <h1 class="header-title">Payment Histories</h1>
+          <h1 class="header-title">Payment Histories &amp; Transaction Records</h1>
         </div>
       </header>
       <div class="container">
-        <div class="card">
-          <div class="toolbar">
-            <input type="text" id="txSearchInput" class="search-input" placeholder="Search by ticket ID or student name...">
-            <select id="txFilterStatus" class="filter-select">
-              <option value="ALL">All Statuses</option>
-              <option value="Completed">Completed</option>
-              <option value="Skipped">Skipped</option>
+        <section class="payment-metrics-grid" aria-label="Payment summary">
+          <article class="card payment-metric-card">
+            <div class="payment-metric-heading"><span>Total Collections</span><i class="fa-solid fa-wallet" aria-hidden="true"></i></div>
+            <strong class="payment-metric-value" id="historyTotalCollections">₱0.00</strong>
+            <div class="payment-metric-footer"><span>Recorded paid transactions</span><span id="paymentCollectionsSpark" class="payment-sparkline" aria-hidden="true"></span></div>
+          </article>
+          <article class="card payment-metric-card">
+            <div class="payment-metric-heading"><span>Total Transactions</span><i class="fa-solid fa-receipt" aria-hidden="true"></i></div>
+            <strong class="payment-metric-value" id="historyTotalTransactions">0</strong>
+            <div class="payment-metric-footer"><span>All-time payment records</span><span id="paymentTransactionsSpark" class="payment-sparkline" aria-hidden="true"></span></div>
+          </article>
+          <article class="card payment-metric-card">
+            <div class="payment-metric-heading"><span>Today's Revenue</span><i class="fa-solid fa-chart-line" aria-hidden="true"></i></div>
+            <strong class="payment-metric-value" id="historyDailyRevenue">₱0.00</strong>
+            <div class="payment-metric-footer"><span>Payments recorded today</span><span id="paymentDailySpark" class="payment-sparkline" aria-hidden="true"></span></div>
+          </article>
+          <article class="card payment-metric-card">
+            <div class="payment-metric-heading"><span>Active Queue</span><i class="fa-solid fa-users-line" aria-hidden="true"></i></div>
+            <strong class="payment-metric-value" id="historyActiveQueue">0</strong>
+            <div class="payment-metric-footer"><span>Waiting or being served</span><span class="payment-live-indicator">Live</span></div>
+          </article>
+        </section>
+
+        <section class="card payment-activity-card" aria-labelledby="paymentActivityTitle">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" id="paymentActivityTitle">Payment Activity</h2>
+              <p class="payment-activity-subtitle">Daily collections over the last seven days</p>
+            </div>
+            <span id="paymentActivitySummary" class="payment-activity-total">₱0.00</span>
+          </div>
+          <div id="paymentActivityChart" class="payment-activity-chart" role="img" aria-label="Daily payment collection chart"></div>
+        </section>
+
+        <section class="card payment-history-card" aria-labelledby="paymentHistoryTitle">
+          <div class="card-header payment-history-heading">
+            <div>
+              <h2 class="card-title" id="paymentHistoryTitle">Recent Transactions</h2>
+              <p class="payment-activity-subtitle">Persistent payment records, including archived queue days</p>
+            </div>
+            <button type="button" id="paymentExportBtn" class="btn btn-secondary"><i class="fa-solid fa-download" aria-hidden="true"></i> Export CSV</button>
+          </div>
+          <div class="toolbar payment-history-toolbar">
+            <label class="payment-search-label" for="txSearchInput">Search transactions</label>
+            <input type="search" id="txSearchInput" class="search-input" placeholder="Reference, student, course, or cashier..." maxlength="120" autocomplete="off">
+            <label class="payment-filter-label" for="txFilterRange">Date range</label>
+            <select id="txFilterRange" class="filter-select" aria-label="Filter by date range">
+              <option value="all">All time</option>
+              <option value="30days">Last 30 days</option>
+              <option value="7days">Last 7 days</option>
+              <option value="today">Today</option>
+            </select>
+            <label class="payment-filter-label" for="txFilterStatus">Status</label>
+            <select id="txFilterStatus" class="filter-select" aria-label="Filter by payment status">
+              <option value="all">All statuses</option>
+              <option value="paid">Paid</option>
+              <option value="pending">Pending</option>
             </select>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Ticket ID</th>
-                <th>Student Name</th>
-                <th>Lane</th>
-                <th>Service Requested</th>
-                <th>Payment Option</th>
-                <th>Issued At</th>
-                <th>Ended At</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="txTableBody"></tbody>
-          </table>
-        </div>
+          <p id="paymentHistoryMessage" class="payment-history-message" role="status" aria-live="polite"></p>
+          <div class="payment-history-table-wrap">
+            <table class="payment-history-table">
+              <thead>
+                <tr>
+                  <th scope="col">Transaction / Ref</th>
+                  <th scope="col">Student ID</th>
+                  <th scope="col">Student Name</th>
+                  <th scope="col">Course / Year</th>
+                  <th scope="col">Amount Paid</th>
+                  <th scope="col">Payment Method</th>
+                  <th scope="col">Date &amp; Time</th>
+                  <th scope="col">Cashier Staff</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody id="txTableBody">
+                <tr><td class="empty-msg" colspan="9">Payment history will load after cashier sign-in.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="payment-history-pagination">
+            <span id="paymentHistoryPageInfo" aria-live="polite">Page 1 of 1</span>
+            <div>
+              <button type="button" id="paymentHistoryPrevious" class="btn btn-secondary" disabled>Previous</button>
+              <button type="button" id="paymentHistoryNext" class="btn btn-secondary" disabled>Next</button>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
 

@@ -23,11 +23,11 @@ development, set the same variables in the environment used to run PHP. The
 API returns HTTP 500 for uncaught connection or query errors and logs detailed
 diagnostics under the included request ID.
 
-Before deploying, run [`supabase.sql`](./supabase.sql) in the Supabase SQL
-Editor. It safely adds ticket fields for student details and transaction
-information, recall tracking, the daily report archive, and indexes used for
-shared queue ordering and active-ticket checks. API failures include a request
-ID that can be matched with Render logs.
+Before deploying, apply the database schema for the existing queue tables.
+Then run [`payment_histories.sql`](./payment_histories.sql) in the Supabase SQL
+Editor. This creates the durable cashier payment ledger and imports existing
+`payment_activity_records` where possible. API failures include a request ID
+that can be matched with Render logs.
 
 `index.html` redirects to the student portal in `student.html`; the cashier
 terminal is in `cashier.html` and uses `app.js`. Both call the same relative
@@ -43,12 +43,18 @@ trimmed Student ID and registered full-name match. Sessions use HttpOnly,
 SameSite cookies and expire after 30 minutes of inactivity.
 
 Queue requests and their requested payment details are stored in
-`queue_tickets`; cashier completion updates that ticket's status and records
-completed tuition payments in `payment_activity_records` using the ticket
-number as the reference. The amount is calculated from
+`queue_tickets`; cashier completion records tuition payments in both
+`payment_activity_records` and `payment_histories` using the ticket number as
+the reference. The payment-history insert shares the completion transaction,
+so queue completion and the permanent audit record succeed or fail together.
+The history ledger stores student/course, payment method, cashier, amount, and
+timestamp snapshots; daily queue reset does not delete it. The cashier payment
+history view reads from this table and supports search, status/date filters,
+pagination, and CSV export. The amount is calculated from
 `student_profiles.current_balance` and the ticket's payment percentage.
 Resetting the operational day archives ticket and status totals in
-`daily_reports` before clearing that day's tickets.
+`daily_reports` before clearing that day's tickets; payment history remains
+available across resets.
 The API accepts `complete_ticket` as the completion-specific action as well as
 `update_status` with a terminal status. Unauthenticated `student_login` and
 `auth_status` checks are supported; cashier queue-management requests must

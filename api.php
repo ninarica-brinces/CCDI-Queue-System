@@ -1,29 +1,49 @@
-﻿<?php
-$requestId = bin2hex(random_bytes(8));
-$secureCookie = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-    || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+<?php
+ob_start();
+ini_set('display_errors', '0');
+ini_set('html_errors', '0');
+ini_set('log_errors', '1');
+$responseSent = false;
+set_error_handler(static function ($severity, $message, $file, $line) {
+    if (!(error_reporting() & $severity)) {
+        return false;
+    }
 
-session_name('CCDI_QUEUE_SESSION');
-session_set_cookie_params([
-    'lifetime' => 0,
-    'path' => '/',
-    'secure' => $secureCookie,
-    'httponly' => true,
-    'samesite' => 'Strict',
-]);
-session_start();
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
+register_shutdown_function(static function () use (&$responseSent) {
+    $error = error_get_last();
+    if (
+        $responseSent ||
+        !$error ||
+        !in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)
+    ) {
+        return;
+    }
 
-header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store, no-cache, must-revalidate');
-header('X-Content-Type-Options: nosniff');
-header('Referrer-Policy: no-referrer');
-header('X-Frame-Options: DENY');
-header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+    http_response_code(500);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    echo '{"success":false,"message":"The queue service encountered an unexpected server error. Please try again later."}';
+});
 
 function respond($status, $payload)
 {
+    global $responseSent;
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
     http_response_code($status);
-    echo json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
+    $json = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
+    $responseSent = true;
+    echo $json === false
+        ? '{"success":false,"message":"Failed to encode API response"}'
+        : $json;
     exit();
 }
 
@@ -125,6 +145,28 @@ function restrictTicketForRole($ticket, $role, $studentId = '', $hasActiveQueue 
     return $ticket;
 }
 
+try {
+    $requestId = bin2hex(random_bytes(8));
+    $secureCookie = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+
+    session_name('CCDI_QUEUE_SESSION');
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => $secureCookie,
+        'httponly' => true,
+        'samesite' => 'Strict',
+    ]);
+    session_start();
+
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: no-referrer');
+    header('X-Frame-Options: DENY');
+    header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+
 verifyRequestOrigin();
 
 $requestTimezone = getenv('APP_TIMEZONE');
@@ -132,7 +174,6 @@ date_default_timezone_set($requestTimezone !== false && $requestTimezone !== '' 
 $today = date('Y-m-d');
 $conn = null;
 
-try {
     $method = $_SERVER['REQUEST_METHOD'];
     $action = $_GET['action'] ?? '';
 
@@ -817,16 +858,16 @@ try {
 
     respond(400, ['success' => false, 'message' => 'Unknown action']);
 } catch (Throwable $error) {
-    if ($conn instanceof PDO && $conn->inTransaction()) {
+    if (($conn ?? null) instanceof PDO && $conn->inTransaction()) {
         try {
             $conn->rollBack();
         } catch (Throwable $rollbackError) {
-            error_log(sprintf('Queue API rollback failure [%s]: %s', $requestId, $rollbackError->getMessage()));
+            error_log(sprintf('Queue API rollback failure [%s]: %s', $requestId ?? 'unavailable', $rollbackError->getMessage()));
         }
     }
     error_log(sprintf(
         'Queue API error [%s] (%s, SQLSTATE %s): %s in %s:%d',
-        $requestId,
+        $requestId ?? 'unavailable',
         get_class($error),
         (string) $error->getCode(),
         $error->getMessage(),
@@ -835,7 +876,6 @@ try {
     ));
     respond(500, [
         'success' => false,
-        'message' => "The queue service encountered a server or database error. Reference: $requestId",
-        'request_id' => $requestId,
+        'message' => 'The queue service encountered a server or database error. Please try again later.',
     ]);
 }

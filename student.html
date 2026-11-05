@@ -2521,7 +2521,7 @@
       try {
         const response = await fetch('./api.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
           body: JSON.stringify({ action: 'call_next', lane })
         });
         const result = await response.json();
@@ -2563,7 +2563,7 @@
       try {
         const response = await fetch('./api.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
           body: JSON.stringify({ action: 'recall_ticket', ticket_id: ticket.ticket_id })
         });
         const result = await response.json();
@@ -2604,11 +2604,10 @@
 
         const response = await fetch('./api.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
           body: JSON.stringify({
-            action: 'update_status',
-            ticket_id: ticket.ticket_id,
-            status: 'completed'
+            action: 'complete_ticket',
+            ticket_id: ticket.ticket_id
           })
         });
         const result = await response.json();

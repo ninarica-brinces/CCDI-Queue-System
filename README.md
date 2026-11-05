@@ -49,6 +49,10 @@ number as the reference. The amount is calculated from
 `student_profiles.current_balance` and the ticket's payment percentage.
 Resetting the operational day archives ticket and status totals in
 `daily_reports` before clearing that day's tickets.
+The API accepts `complete_ticket` as the completion-specific action as well as
+`update_status` with a terminal status. Unauthenticated `student_login` and
+`auth_status` checks are supported; cashier queue-management requests must
+include the session CSRF token returned by login or `auth_status`.
 
 Ticket creation requires an exact student number and full name match in
 `student_profiles`; student lookup suggestions are not exposed. The API limits

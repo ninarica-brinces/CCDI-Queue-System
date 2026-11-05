@@ -4,6 +4,49 @@ ini_set('display_errors', '0');
 ini_set('html_errors', '0');
 ini_set('log_errors', '1');
 $responseSent = false;
+function clearOutputBuffers()
+{
+    while (ob_get_level() > 0) {
+        ob_clean();
+        if (!ob_end_clean()) {
+            break;
+        }
+    }
+}
+
+function sendJsonErrorResponse($message)
+{
+    global $responseSent;
+    if ($responseSent) {
+        exit();
+    }
+
+    clearOutputBuffers();
+    http_response_code(500);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    $responseSent = true;
+    $json = json_encode(
+        ['success' => false, 'message' => $message],
+        JSON_INVALID_UTF8_SUBSTITUTE
+    );
+    echo $json === false
+        ? '{"success":false,"message":"The queue service encountered an unexpected server error. Please try again later."}'
+        : $json;
+    exit();
+}
+
+set_exception_handler(static function (Throwable $error) {
+    error_log(sprintf(
+        'Uncaught Queue API exception (%s, code %s): %s in %s:%d',
+        get_class($error),
+        (string) $error->getCode(),
+        $error->getMessage(),
+        $error->getFile(),
+        $error->getLine()
+    ));
+    sendJsonErrorResponse('The queue service encountered an unexpected server error. Please try again later.');
+});
 set_error_handler(static function ($severity, $message, $file, $line) {
     if (!(error_reporting() & $severity)) {
         return false;
@@ -21,21 +64,20 @@ register_shutdown_function(static function () use (&$responseSent) {
         return;
     }
 
-    if (ob_get_level() > 0) {
-        ob_clean();
-    }
-    http_response_code(500);
-    header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-store, no-cache, must-revalidate');
-    echo '{"success":false,"message":"The queue service encountered an unexpected server error. Please try again later."}';
+    error_log(sprintf(
+        'Fatal Queue API error (%s): %s in %s:%d',
+        (string) $error['type'],
+        $error['message'],
+        $error['file'],
+        $error['line']
+    ));
+    sendJsonErrorResponse('The queue service encountered an unexpected server error. Please try again later.');
 });
 
 function respond($status, $payload)
 {
     global $responseSent;
-    if (ob_get_level() > 0) {
-        ob_clean();
-    }
+    clearOutputBuffers();
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store, no-cache, must-revalidate');
     http_response_code($status);
@@ -200,6 +242,7 @@ $conn = null;
             'create_ticket',
             'call_next',
             'update_status',
+            'complete_ticket',
             'recall_ticket',
             'reset_day',
         ],
@@ -686,9 +729,11 @@ $conn = null;
         respond(200, ['success' => true, 'data' => restrictTicketForRole($ticket, 'cashier')]);
     }
 
-    if ($action === 'update_status') {
+    if (in_array($action, ['update_status', 'complete_ticket'], true)) {
         $ticketId = filter_var($input['ticket_id'] ?? null, FILTER_VALIDATE_INT);
-        $status = $input['status'] ?? '';
+        $status = $action === 'complete_ticket'
+            ? 'completed'
+            : ($input['status'] ?? '');
         if (!$ticketId || !in_array($status, ['completed', 'cancelled'], true)) {
             respond(400, ['success' => false, 'message' => 'A valid ticket ID and terminal status are required']);
         }

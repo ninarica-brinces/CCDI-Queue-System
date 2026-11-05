@@ -312,15 +312,13 @@ $conn = null;
         }
 
         $student = $conn->prepare(
-            "SELECT student_number AS student_id,
+            "SELECT student_number,
+                    student_number AS student_id,
                     concat_ws(' ', NULLIF(btrim(first_name), ''), NULLIF(btrim(last_name), '')) AS full_name,
                     current_balance, NULL AS course, NULL AS address, NULL AS year_level
              FROM public.student_profiles
-             WHERE lower(btrim(student_number)) = lower(btrim(?))
-               AND regexp_replace(
-                     lower(concat_ws(' ', NULLIF(btrim(first_name), ''), NULLIF(btrim(last_name), ''))),
-                     '[[:space:]]+', ' ', 'g'
-                   ) = regexp_replace(lower(btrim(?)), '[[:space:]]+', ' ', 'g')
+             WHERE student_number = ?
+               AND lower(concat_ws(' ', btrim(first_name), btrim(last_name))) = lower(btrim(?))
              LIMIT 1"
         );
         $student->execute([$studentId, $studentName]);
@@ -334,7 +332,8 @@ $conn = null;
             ]);
         }
 
-        issueSession('student', ['student_id' => $profile['student_id']]);
+        issueSession('student', ['student_id' => $profile['student_number']]);
+        $_SESSION['student_id'] = $profile['student_number'];
         respond(200, [
             'success' => true,
             'role' => 'student',

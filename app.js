@@ -1,4 +1,4 @@
-import { APP_CONFIG } from './config.js';
+﻿import { APP_CONFIG } from './config.js';
 import { QueueManager } from './queueManager.js';
 
 let elements = {};
@@ -339,6 +339,8 @@ function bindEvents() {
 
   elements.openModalBtn.addEventListener('click', () => elements.dialog.showModal());
   elements.serviceTypeSelect.addEventListener('change', updateTuitionFields);
+  // Spec 3: live payment breakdown on amount input
+  elements.customDiscountInput.addEventListener('input', updateCashierPayBreakdown);
 
   const closeModal = () => elements.dialog.close();
   elements.closeModalBtn.addEventListener('click', closeModal);
@@ -346,12 +348,12 @@ function bindEvents() {
 
   elements.ticketForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const studentName = elements.studentNameInput.value.trim();
+    const studentName = elements.studentNameInput.value.trim().replace(/\s+/g, ' ');
     const customValue = elements.customDiscountInput.value.trim();
 
     const studentId = elements.studentIdInput.value.trim();
     if (!studentName || !studentId) {
-      alert('Authorization failed: Student Name and Student ID must exactly match an authorized CCDI student record.');
+      alert('Enter both the Student ID and full name shown in the active CCDI student record.');
       return;
     }
 
@@ -370,7 +372,8 @@ function bindEvents() {
       payment: isTuitionPayment ? elements.paymentTypeSelect.value : 'N/A (Document Only)',
       paymentPeriod: isTuitionPayment ? elements.paymentPeriodSelect.value : '',
       paymentPercentage: isTuitionPayment && isPercentage ? customValue : '',
-      discount: isTuitionPayment && customValue && !isPercentage ? customValue : ''
+      discount: isTuitionPayment && customValue && !isPercentage ? customValue : '',
+      customAmount: isTuitionPayment && customValue && !isPercentage ? parseFloat(customValue) || 0 : 0
     });
     if (!created) return;
     elements.ticketForm.reset();
@@ -382,8 +385,13 @@ function bindEvents() {
   elements.btnRegSkip.addEventListener('click', async () => await queueManager.skipCurrent('Regular'));
   elements.btnRegRecall.addEventListener('click', async () => {
     const active = queueManager.getState().currentRegular;
-    if (active && await queueManager.recallCurrent('Regular')) {
-      alert(`📱 CCDI Queue Alert: Ticket ${active.id}, please return to the cashier counter.`);
+    if (active) {
+      const res = await queueManager.recallCurrent('Regular');
+      if (res) {
+        const attempt = res.data?.recall_count || (active.recallCount + 1);
+        const msg = res.notification || `Paki-check ang queue: Ikaw ay tinatawag na sa Cashier (Attempt ${attempt}/3). Bumalik na sa pila.`;
+        alert(`📱 ${msg}\nTicket: ${active.id}`);
+      }
     }
   });
 
@@ -392,22 +400,25 @@ function bindEvents() {
   elements.btnPrioSkip.addEventListener('click', async () => await queueManager.skipCurrent('Priority'));
   elements.btnPrioRecall.addEventListener('click', async () => {
     const active = queueManager.getState().currentPriority;
-    if (active && await queueManager.recallCurrent('Priority')) {
-      alert(`📱 CCDI Queue Alert: Ticket ${active.id}, please return to the cashier counter.`);
+    if (active) {
+      const res = await queueManager.recallCurrent('Priority');
+      if (res) {
+        const attempt = res.data?.recall_count || (active.recallCount + 1);
+        const msg = res.notification || `Paki-check ang queue: Ikaw ay tinatawag na sa Cashier (Attempt ${attempt}/3). Bumalik na sa pila.`;
+        alert(`📱 ${msg}\nTicket: ${active.id}`);
+      }
     }
   });
 
   elements.resetSystemBtn.addEventListener('click', async () => {
-    if (
-      confirm('Reset the operational day? A summary report will be archived, then today\'s queue tickets will be cleared.') &&
-      confirm('Final confirmation: permanently clear today\'s tickets and begin a fresh queue?')
-    ) {
-      try {
-        await queueManager.resetDay();
-        alert('Operational day reset. The daily report was archived successfully.');
-      } catch (error) {
-        alert(error.message);
-      }
+    if (!window.confirm("Are you sure you want to reset the queue? This will archive today's history.")) {
+      return;
+    }
+    try {
+      await queueManager.resetDay();
+      alert('Operational day reset. The daily report was archived successfully.');
+    } catch (error) {
+      alert(error.message);
     }
   });
 }
@@ -500,7 +511,31 @@ function updateTuitionFields() {
     elements.paymentTypeSelect.value = 'N/A (Document Only)';
     elements.paymentPeriodSelect.value = '';
     elements.customDiscountInput.value = '';
+    const breakdown = document.getElementById('cashierPayBreakdown');
+    if (breakdown) breakdown.style.display = 'none';
   }
+}
+
+// --- Spec 3: Live payment breakdown recalculation for cashier ---
+let cashierStudentBalance = 0;
+
+function updateCashierPayBreakdown() {
+  const breakdown = document.getElementById('cashierPayBreakdown');
+  if (!breakdown) return;
+  const rawVal = parseFloat(elements.customDiscountInput.value);
+  if (!rawVal || rawVal <= 0 || elements.serviceTypeSelect.value !== 'Tuition Payment') {
+    breakdown.style.display = 'none';
+    return;
+  }
+  const remaining = cashierStudentBalance > 0 ? Math.max(0, cashierStudentBalance - rawVal) : 0;
+  const pct = cashierStudentBalance > 0
+    ? Math.min(100, (rawVal / cashierStudentBalance) * 100).toFixed(1) + '%'
+    : 'Custom Amount';
+  const fmt = n => `\u20B1${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  document.getElementById('cpAmountPay').textContent = fmt(rawVal);
+  document.getElementById('cpRemaining').textContent = fmt(remaining);
+  document.getElementById('cpPercent').textContent = pct;
+  breakdown.style.display = 'block';
 }
 
 async function restoreCashierSession() {

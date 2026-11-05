@@ -170,28 +170,36 @@ export class QueueManager {
     discount
   }) {
     try {
+      const normalizedStudentId = String(studentId ?? '').trim();
+      const normalizedStudentName = String(studentName ?? '').trim().replace(/\s+/g, ' ');
       const response = await fetch(APP_CONFIG.apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.#csrfToken },
         body: JSON.stringify({
           action: 'create_ticket',
           lane,
-          studentId,
-          studentName,
+          studentId: normalizedStudentId,
+          studentName: normalizedStudentName,
           service,
           payment,
           paymentPeriod,
           paymentPercentage,
-          discount
+          discount,
+          customAmount
         })
       });
       const result = await response.json();
       if (!response.ok || !result.success) {
+        if (response.status === 403 && result.code === 'STUDENT_RECORD_MISMATCH') {
+          throw new Error(
+            'We could not verify this student. Check that the Student ID and full name match an active CCDI student record, then try again.'
+          );
+        }
         throw new Error(result.message || 'Failed to create ticket');
       }
 
       await this.fetchState().catch(() => undefined);
-      return true;
+      return result;
     } catch (error) {
       console.error('Error creating ticket:', error);
       alert(error.message || 'Failed to create ticket');

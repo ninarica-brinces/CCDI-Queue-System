@@ -705,6 +705,9 @@
 </div>
 
 <div class="nav-actions">
+  <button class="btn-nav" id="navPaymentHistoryBtn" onclick="viewStudentPaymentDetails()">
+    💳 Payment Histories
+  </button>
   <button class="btn-nav" onclick="switchView('homeView')">
     🏠 Home
   </button>
@@ -1010,10 +1013,22 @@
       <div class="form-group" style="margin-bottom: 1.2rem;">
 
         <label>
-          Payment Percentage
+          Custom Payment Amount <span style="font-weight:400; color:var(--text-muted);">(PHP)</span>
         </label>
 
-        <input id="payPercentage" class="form-control" type="text" maxlength="120" placeholder="Enter a percentage or amount, e.g. 15% or 500 PHP">
+        <input id="payPercentage" class="form-control" type="number" min="0" step="0.01"
+          placeholder="Enter exact amount in PHP, e.g. 2500">
+
+        <!-- Live balance breakdown display -->
+        <div id="paymentBreakdownBox" style="display:none; margin-top:0.6rem; padding:0.6rem 0.8rem;
+          background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; font-size:0.8rem; line-height:1.6;">
+          <div><span style="color:var(--text-muted);">Amount to Pay:</span>
+            <strong id="bdAmountPay" style="color:var(--primary-blue);">₱0.00</strong></div>
+          <div><span style="color:var(--text-muted);">Remaining Balance:</span>
+            <strong id="bdRemaining" style="color:var(--danger-red);">₱0.00</strong></div>
+          <div><span style="color:var(--text-muted);">Payment % of Total:</span>
+            <strong id="bdPercent" style="color:var(--success-green);">0%</strong></div>
+        </div>
 
       </div>
       </div>
@@ -1499,13 +1514,18 @@
       class="form-control"
       placeholder="Enter your CCDI Student ID"
       autofocus
+      autocomplete="off"
+      autocorrect="off"
+      autocapitalize="off"
+      spellcheck="false"
     >
 
   </div>
 
   <div class="form-group">
     <label for="modalStudName">Registered full name</label>
-    <input type="text" id="modalStudName" class="form-control" placeholder="Enter your full name as registered">
+    <input type="text" id="modalStudName" class="form-control" placeholder="Enter your full name as registered"
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
   </div>
 
 
@@ -1560,7 +1580,8 @@
 
     <label for="cashierUsername">Username</label>
 
-    <input type="text" id="cashierUsername" class="form-control" placeholder="Enter Username" autocomplete="username">
+    <input type="text" id="cashierUsername" class="form-control" placeholder="Enter Username"
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
 
   </div>
 
@@ -1576,6 +1597,7 @@
       id="cashierPasscode"
       class="form-control"
       placeholder="Enter password"
+      autocomplete="off"
     >
 
   </div>
@@ -1690,7 +1712,8 @@
         );
         remoteTickets = result.data;
         recalledTickets.forEach(ticket => {
-          alert(`📱 CCDI Queue Alert: Ticket ${ticket.ticket_number}, please return to the cashier counter.`);
+          const attempt = ticket.recall_count || 1;
+          alert(`📱 Paki-check ang queue: Ikaw ay tinatawag na sa Cashier (Attempt ${attempt}/3). Bumalik na sa pila.`);
         });
         const servingTicket = remoteTickets
           .filter(ticket => ticket.status === 'serving')
@@ -1884,6 +1907,9 @@
       }
 
       activeStudentId = profile.student_id;
+      if (profile.current_balance !== undefined && profile.current_balance !== null) {
+        studentTotalBalance = parseFloat(profile.current_balance) || 0;
+      }
 
       document.getElementById(
         'studIdDisplay'
@@ -2016,12 +2042,45 @@
       document.getElementById('tuitionPaymentDetails').hidden = serviceName !== 'Tuition Payment';
       if (serviceName !== 'Tuition Payment') {
         document.getElementById('payPercentage').value = '';
+        document.getElementById('paymentBreakdownBox').style.display = 'none';
         document.querySelectorAll('input[name="period"], input[name="payType"]').forEach(input => {
           input.checked = false;
         });
       }
       updateJoinButtonState();
     }
+
+    /* =========================================
+       LIVE PAYMENT RECALCULATION (Spec 3)
+    ========================================= */
+
+    // Known total balance from student profile (populated after login)
+    let studentTotalBalance = 0;
+
+    function updatePaymentBreakdown() {
+      const amountInput = document.getElementById('payPercentage');
+      const breakdownBox = document.getElementById('paymentBreakdownBox');
+      const rawVal = parseFloat(amountInput.value);
+
+      if (!rawVal || rawVal <= 0 || currentService !== 'Tuition Payment') {
+        breakdownBox.style.display = 'none';
+        return;
+      }
+
+      const amountPay = Math.min(rawVal, studentTotalBalance > 0 ? studentTotalBalance : rawVal);
+      const remaining = studentTotalBalance > 0 ? Math.max(0, studentTotalBalance - rawVal) : 0;
+      const pct = studentTotalBalance > 0 ? Math.min(100, (rawVal / studentTotalBalance) * 100).toFixed(1) : 'N/A';
+
+      document.getElementById('bdAmountPay').textContent = `₱${amountPay.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      document.getElementById('bdRemaining').textContent = `₱${remaining.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      document.getElementById('bdPercent').textContent = studentTotalBalance > 0 ? `${pct}%` : 'Custom Amount';
+      breakdownBox.style.display = 'block';
+
+      updateJoinButtonState();
+    }
+
+    // Attach live recalculation listener after DOM ready
+    document.getElementById('payPercentage').addEventListener('input', updatePaymentBreakdown);
 
 
     /* =========================================
@@ -2100,6 +2159,61 @@
         );
 
       }
+    }
+
+    
+    /* =========================================
+       VIEW PAYMENT DETAILS (Spec 2)
+    ========================================= */
+    async function viewStudentPaymentDetails() {
+      if (!activeStudentId) {
+        alert("Please sign in with your student account first.");
+        openStudentModal();
+        return;
+      }
+
+      // Check active queue status: waiting, serving, completed
+      const hasQueueTicket = remoteTickets.some(
+        ticket => ticket.student_id === activeStudentId &&
+          ['waiting', 'serving', 'completed'].includes(ticket.status)
+      );
+
+      if (!hasQueueTicket) {
+        alert("You must join the queue first to view payment details.");
+        return;
+      }
+
+      try {
+        const response = await fetch('./api.php?action=get_payment_details', { cache: 'no-store' });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || "You must join the queue first to view payment details.");
+        }
+        showPaymentHistoryModal(result);
+      } catch (err) {
+        alert(err.message || "You must join the queue first to view payment details.");
+      }
+    }
+
+    function showPaymentHistoryModal(payload) {
+      const balElem = document.getElementById('spmBalance');
+      const tbody = document.getElementById('spmTableBody');
+      const balance = payload.current_balance !== undefined ? payload.current_balance : studentTotalBalance;
+      balElem.textContent = '₱' + Number(balance).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      const records = payload.data || [];
+      if (records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No payment records found.</td></tr>';
+      } else {
+        tbody.innerHTML = records.map(r => `
+          <tr>
+            <td><strong>${escapeHtml(r.reference_number)}</strong></td>
+            <td>₱${Number(r.amount_paid).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td>${new Date(r.created_at).toLocaleString('en-PH', { dateStyle: 'short', timeStyle: 'short' })}</td>
+          </tr>
+        `).join('');
+      }
+      document.getElementById('studentPaymentModal').classList.add('open');
     }
 
     function startQueuePolling() {
@@ -2233,7 +2347,8 @@
           .getElementById(
             'payPercentage'
           )
-          .value;
+          .value
+          .trim();
 
 
       const laneInput =
@@ -2297,8 +2412,8 @@
       }
 
 
-      if (currentService === 'Tuition Payment' && !payPercentage) {
-        alert("Please select a Payment Percentage before joining the queue.");
+      if (currentService === 'Tuition Payment' && !payPercentage.trim()) {
+        alert("Please enter a Payment Amount before joining the queue.");
         document.getElementById('payPercentage').focus();
         return;
       }
@@ -2344,6 +2459,12 @@
         return;
       }
 
+      // Spec 6: 100 ticket daily limit check
+      if (remoteTickets.length >= 100) {
+        alert("Daily ticket limit of 100 students has been reached.");
+        return;
+      }
+
       const button = document.getElementById('btnGenerateTicket');
       button.disabled = true;
       try {
@@ -2361,8 +2482,10 @@
             service: currentService,
             payment: currentService === 'Tuition Payment' ? payTypeInput.value : 'N/A (Document Only)',
             paymentPeriod: currentService === 'Tuition Payment' ? periodInput.value : '',
-            paymentPercentage: currentService === 'Tuition Payment' && payPercentage.includes('%') ? payPercentage : '',
-            discount: currentService === 'Tuition Payment' && payPercentage && !payPercentage.includes('%') ? payPercentage : '',
+            // Spec 3: send the raw PHP amount; backend accepts numeric customAmount as well as % strings
+            paymentPercentage: currentService === 'Tuition Payment' && payPercentage.trim().includes('%') ? payPercentage.trim() : '',
+            discount: currentService === 'Tuition Payment' && payPercentage.trim() && !payPercentage.trim().includes('%') ? payPercentage.trim() : '',
+            customAmount: currentService === 'Tuition Payment' && payPercentage.trim() && !payPercentage.trim().includes('%') ? parseFloat(payPercentage.trim()) || 0 : 0,
             notes: lane === 'Parent/Guardian' ? `Relation: ${relation}` : ''
           })
         });
@@ -2450,7 +2573,12 @@
 
         playChime();
         await refreshQueueState();
-        alert(`📱 Recall alert sent to ${ticket.student_name}. (${result.data.recall_count}/3)`);
+        const attempt = result.data.recall_count;
+        const msg = result.notification || `Paki-check ang queue: Ikaw ay tinatawag na sa Cashier (Attempt ${attempt}/3). Bumalik na sa pila.`;
+        alert(`📱 ${msg}\nTicket: ${ticket.ticket_number}`);
+        if (attempt >= 3) {
+          alert("Maximum 3 recalls reached. Ticket status has been updated to Missed/Skipped.");
+        }
       } catch (error) {
         console.error('Failed to recall the active ticket:', error);
         alert(error.message || 'Unable to recall the active ticket.');
@@ -3122,5 +3250,37 @@ restoreStudentSession();
     if (requestedPortal === 'student') window.openStudentModal();
     if (requestedPortal === 'cashier') window.openCashierModal();
   </script>
+
+  <!-- PAYMENT HISTORIES MODAL (Spec 2) -->
+  <div class="modal-overlay" id="studentPaymentModal">
+    <div class="modal-box" style="max-width: 550px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <h3 style="font-size:1.2rem; color:var(--text-dark); margin:0;">💳 Payment Histories</h3>
+        <button onclick="closeModal('studentPaymentModal')" style="background:none; border:none; font-size:1.4rem; cursor:pointer; color:var(--text-muted);">&times;</button>
+      </div>
+      <div id="spmBalanceContainer" style="margin-bottom:1rem; padding:0.75rem 1rem; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
+        <span style="font-size:0.85rem; color:var(--text-muted);">Current Outstanding Balance:</span>
+        <div id="spmBalance" style="font-size:1.4rem; font-weight:800; color:var(--primary-blue);">₱0.00</div>
+      </div>
+      <div class="table-container" style="max-height: 280px; overflow-y:auto; border:1px solid var(--border-color); border-radius:6px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Reference #</th>
+              <th>Amount Paid</th>
+              <th>Date / Time</th>
+            </tr>
+          </thead>
+          <tbody id="spmTableBody">
+            <tr><td colspan="3" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No payment records found.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:1rem; text-align:right;">
+        <button class="btn-portal" onclick="closeModal('studentPaymentModal')" style="padding:0.5rem 1.2rem;">Close</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

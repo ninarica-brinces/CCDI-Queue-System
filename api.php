@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 $requestId = bin2hex(random_bytes(8));
 $secureCookie = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
     || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
@@ -108,7 +108,7 @@ function issueSession($role, $identity)
     ];
 }
 
-function restrictTicketForRole($ticket, $role, $studentId = '')
+function restrictTicketForRole($ticket, $role, $studentId = '', $hasActiveQueue = true)
 {
     if (($ticket['transaction_type'] ?? '') !== 'Tuition Payment') {
         foreach (['payment_method', 'payment_period', 'payment_percentage', 'discount'] as $field) {
@@ -116,7 +116,7 @@ function restrictTicketForRole($ticket, $role, $studentId = '')
         }
     }
 
-    if ($role === 'student' && ($ticket['student_id'] ?? '') !== $studentId) {
+    if ($role === 'student' && (($ticket['student_id'] ?? '') !== $studentId || !$hasActiveQueue)) {
         foreach (['student_name', 'student_id', 'course', 'address', 'year_level', 'payment_method', 'payment_period', 'payment_percentage', 'discount', 'notes'] as $field) {
             $ticket[$field] = null;
         }
@@ -192,22 +192,35 @@ try {
         $studentId = requestString($input, 'studentId', 64);
         $studentName = requestString($input, 'studentName', 120);
         if ($studentId === '' || $studentName === '') {
-            respond(403, ['success' => false, 'message' => 'Authorization failed: Student ID and full name must match a CCDI student record.']);
+            respond(400, [
+                'success' => false,
+                'code' => 'STUDENT_DETAILS_REQUIRED',
+                'fields' => ['studentId', 'studentName'],
+                'message' => 'Enter both the Student ID and full name.',
+            ]);
         }
 
         $student = $conn->prepare(
             "SELECT student_number AS student_id,
                     btrim(first_name) || ' ' || btrim(last_name) AS full_name,
-                    NULL AS course, NULL AS address, NULL AS year_level
+                    current_balance, NULL AS course, NULL AS address, NULL AS year_level
              FROM public.student_profiles
              WHERE lower(btrim(student_number)) = lower(btrim(?))
-               AND lower(btrim(first_name) || ' ' || btrim(last_name)) = lower(btrim(?))
+               AND regexp_replace(
+                     lower(btrim(first_name) || ' ' || btrim(last_name)),
+                     '[[:space:]]+', ' ', 'g'
+                   ) = regexp_replace(lower(btrim(?)), '[[:space:]]+', ' ', 'g')
              LIMIT 1"
         );
         $student->execute([$studentId, $studentName]);
         $profile = $student->fetch();
         if (!$profile) {
-            respond(403, ['success' => false, 'message' => 'Authorization failed: Student ID and full name must exactly match a CCDI student record.']);
+            respond(403, [
+                'success' => false,
+                'code' => 'STUDENT_RECORD_MISMATCH',
+                'fields' => ['studentId', 'studentName'],
+                'message' => 'The Student ID and full name do not match an active CCDI student record. Check the ID and spelling, and use the full name on the record.',
+            ]);
         }
 
         issueSession('student', ['student_id' => $profile['student_id']]);
@@ -242,7 +255,7 @@ try {
             $student = $conn->prepare(
                 "SELECT student_number AS student_id,
                         btrim(first_name) || ' ' || btrim(last_name) AS full_name,
-                        NULL AS course, NULL AS address, NULL AS year_level
+                        current_balance, NULL AS course, NULL AS address, NULL AS year_level
                  FROM public.student_profiles WHERE student_number = ? LIMIT 1"
             );
             $student->execute([$identity['student_id'] ?? '']);
@@ -281,17 +294,78 @@ try {
         }
         requireRole($role, false);
         $studentId = $role === 'student' ? (string) ($_SESSION['identity']['student_id'] ?? '') : '';
+        $hasActiveQueue = true;
+        if ($role === 'student' && $studentId !== '') {
+            $actCheck = $conn->prepare(
+                "SELECT 1 FROM public.queue_tickets
+                 WHERE service_date = ? AND student_id = ?
+                   AND status IN ('waiting', 'serving', 'completed')
+                 LIMIT 1"
+            );
+            $actCheck->execute([$today, $studentId]);
+            $hasActiveQueue = (bool) $actCheck->fetchColumn();
+        }
         $stmt = $conn->prepare(
             'SELECT * FROM public.queue_tickets WHERE service_date = ? ORDER BY created_at ASC, ticket_id ASC'
         );
         $stmt->execute([$today]);
         $tickets = array_map(
-            static fn($ticket) => restrictTicketForRole($ticket, $role, $studentId),
+            static fn($ticket) => restrictTicketForRole($ticket, $role, $studentId, $hasActiveQueue),
             $stmt->fetchAll()
         );
-        respond(200, ['success' => true, 'data' => $tickets]);
+        respond(200, ['success' => true, 'data' => $tickets, 'has_active_queue' => $hasActiveQueue]);
     }
 
+
+    // --- Spec 2: Payment details access gate ---
+    // Students can only retrieve payment history if they have a queue ticket for today.
+    if ($method === 'GET' && $action === 'get_payment_details') {
+        $role = $_SESSION['role'] ?? '';
+        if (!in_array($role, ['student', 'cashier'], true)) {
+            respond(401, ['success' => false, 'message' => 'Authentication required']);
+        }
+        requireRole($role, false);
+        $studentId = $role === 'student'
+            ? (string) ($_SESSION['identity']['student_id'] ?? '')
+            : trim((string) ($_GET['student_id'] ?? ''));
+        if ($studentId === '') {
+            respond(400, ['success' => false, 'message' => 'Student ID is required']);
+        }
+        $queueCheck = $conn->prepare(
+            "SELECT 1 FROM public.queue_tickets
+             WHERE service_date = ? AND student_id = ?
+               AND status IN ('waiting', 'serving', 'completed')
+             LIMIT 1"
+        );
+        $queueCheck->execute([$today, $studentId]);
+        if (!$queueCheck->fetchColumn()) {
+            respond(403, [
+                'success' => false,
+                'code'    => 'QUEUE_ACCESS_REQUIRED',
+                'message' => 'You must join the queue first to view payment details.',
+            ]);
+        }
+        $histories = $conn->prepare(
+            'SELECT reference_number, amount_paid, created_at
+             FROM public.payment_histories WHERE student_id = ?
+             ORDER BY created_at DESC LIMIT 50'
+        );
+        $histories->execute([$studentId]);
+        $historyRows = $histories->fetchAll();
+
+        $profileStmt = $conn->prepare(
+            'SELECT current_balance FROM public.student_profiles WHERE student_number = ? LIMIT 1'
+        );
+        $profileStmt->execute([$studentId]);
+        $profileRow = $profileStmt->fetch();
+
+        respond(200, [
+            'success' => true,
+            'student_id' => $studentId,
+            'current_balance' => (float) ($profileRow['current_balance'] ?? 0),
+            'data' => $historyRows
+        ]);
+    }
     if ($method === 'GET') {
         respond(400, ['success' => false, 'message' => 'Unknown action']);
     }
@@ -322,7 +396,12 @@ try {
             respond(400, ['success' => false, 'message' => 'Lane must be Regular or Priority']);
         }
         if ($studentName === '' || $studentId === '') {
-            respond(403, ['success' => false, 'message' => 'Authorization failed: Student ID and full name are required.']);
+            respond(400, [
+                'success' => false,
+                'code' => 'STUDENT_DETAILS_REQUIRED',
+                'fields' => ['studentId', 'studentName'],
+                'message' => 'Enter both the Student ID and full name.',
+            ]);
         }
         if ($service === '' || $payment === '') {
             respond(400, ['success' => false, 'message' => 'Service and payment are required']);
@@ -334,17 +413,25 @@ try {
         $student = $conn->prepare(
             "SELECT student_number AS student_id,
                     btrim(first_name) || ' ' || btrim(last_name) AS full_name,
-                    NULL AS course, NULL AS address, NULL AS year_level
+                    current_balance, NULL AS course, NULL AS address, NULL AS year_level
              FROM public.student_profiles
              WHERE lower(btrim(student_number)) = lower(btrim(?))
-               AND lower(btrim(first_name) || ' ' || btrim(last_name)) = lower(btrim(?))
+               AND regexp_replace(
+                     lower(btrim(first_name) || ' ' || btrim(last_name)),
+                     '[[:space:]]+', ' ', 'g'
+                   ) = regexp_replace(lower(btrim(?)), '[[:space:]]+', ' ', 'g')
              LIMIT 1"
         );
         $student->execute([$studentId, $studentName]);
         $profile = $student->fetch();
         if (!$profile) {
             $conn->rollBack();
-            respond(403, ['success' => false, 'message' => 'Authorization failed: Student ID and full name must exactly match a CCDI student record.']);
+            respond(403, [
+                'success' => false,
+                'code' => 'STUDENT_RECORD_MISMATCH',
+                'fields' => ['studentId', 'studentName'],
+                'message' => 'The Student ID and full name do not match an active CCDI student record. Check the ID and spelling, and use the full name on the record.',
+            ]);
         }
         if (
             ($_SESSION['role'] ?? '') === 'student' &&
@@ -375,6 +462,7 @@ try {
             $payment = 'N/A (Document Only)';
         } elseif (!in_array($payment, [
             'Full Payment',
+            'Partial Payment (Custom Amount)',
             'Partial Payment (50%)',
             'Partial Payment (25%)',
             'Partial Payment',
@@ -384,17 +472,47 @@ try {
             $conn->rollBack();
             respond(400, ['success' => false, 'message' => 'Select a supported tuition payment option']);
         }
-        if ($paymentPercentage !== '') {
-            if (
-                !preg_match('/^(\d+(?:\.\d+)?)%?$/D', $paymentPercentage, $matches) ||
-                (float) $matches[1] > 100
-            ) {
+        $customAmount = isset($input['customAmount']) && is_numeric($input['customAmount'])
+            ? (float) $input['customAmount']
+            : null;
+        if ($service === 'Tuition Payment') {
+            if ($customAmount !== null && $customAmount > 0) {
+                $balStmt = $conn->prepare('SELECT current_balance FROM public.student_profiles WHERE student_number = ? LIMIT 1');
+                $balStmt->execute([$profile['student_id']]);
+                $studentBalance = (float) ($balStmt->fetchColumn() ?: 0);
+                if ($studentBalance > 0) {
+                    $computedPct = round(min(100.0, ($customAmount / $studentBalance) * 100), 2);
+                    $paymentPercentage = (string) $computedPct;
+                } else {
+                    $paymentPercentage = '100';
+                }
+                if ($discount === '') {
+                    $discount = 'PHP ' . number_format($customAmount, 2);
+                }
+            } elseif ($paymentPercentage !== '') {
+                if (preg_match('/^(\d+(?:\.\d+)?)%?$/D', $paymentPercentage, $matches)) {
+                    $val = (float) $matches[1];
+                    if ($val > 100) {
+                        $balStmt = $conn->prepare('SELECT current_balance FROM public.student_profiles WHERE student_number = ? LIMIT 1');
+                        $balStmt->execute([$profile['student_id']]);
+                        $studentBalance = (float) ($balStmt->fetchColumn() ?: 0);
+                        if ($studentBalance > 0) {
+                            $paymentPercentage = (string) round(min(100.0, ($val / $studentBalance) * 100), 2);
+                        } else {
+                            $paymentPercentage = '100';
+                        }
+                        if ($discount === '') {
+                            $discount = 'PHP ' . number_format($val, 2);
+                        }
+                    }
+                } else {
+                    $conn->rollBack();
+                    respond(400, ['success' => false, 'message' => 'Payment percentage must be a number from 0 to 100 or a valid amount.']);
+                }
+            } elseif ($payment === 'Partial Payment') {
                 $conn->rollBack();
-                respond(400, ['success' => false, 'message' => 'Payment percentage must be a number from 0 to 100.']);
+                respond(400, ['success' => false, 'message' => 'A payment amount or percentage is required for partial payment.']);
             }
-        } elseif ($payment === 'Partial Payment') {
-            $conn->rollBack();
-            respond(400, ['success' => false, 'message' => 'A percentage is required for partial payment.']);
         }
 
         $studentLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
@@ -418,7 +536,7 @@ try {
         $dailyCount->execute([$today, $today]);
         if ((int) $dailyCount->fetchColumn() >= 100) {
             $conn->rollBack();
-            respond(409, ['success' => false, 'message' => 'The daily limit of 100 student tickets has been reached.']);
+            respond(409, ['success' => false, 'message' => 'Daily ticket limit of 100 students has been reached.']);
         }
 
         $count = $conn->prepare(
@@ -602,7 +720,7 @@ try {
             "UPDATE public.queue_tickets
              SET recall_count = recall_count + 1
              WHERE ticket_id = ? AND service_date = ? AND status = 'serving' AND recall_count < 3
-             RETURNING ticket_id, ticket_number, recall_count"
+             RETURNING ticket_id, ticket_number, recall_count, student_id"
         );
         $stmt->execute([$ticketId, $today]);
         $ticket = $stmt->fetch();
@@ -622,7 +740,53 @@ try {
             respond(409, ['success' => false, 'message' => 'Only a currently serving ticket can be recalled.']);
         }
         $conn->commit();
-        respond(200, ['success' => true, 'data' => $ticket]);
+
+        // --- Spec 7: Recall notification trigger ---
+        // Build the Tagalog recall notification message.
+        $recallAttempt = (int) $ticket['recall_count'];
+        $notificationMsg = "Paki-check ang queue: Ikaw ay tinatawag na sa Cashier (Attempt {$recallAttempt}/3). Bumalik na sa pila.";
+
+        // If recall_count has reached 3, auto-update the ticket to cancelled (Missed/Skipped).
+        if ($recallAttempt >= 3) {
+            $autoSkip = $conn->prepare(
+                "UPDATE public.queue_tickets SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP
+                 WHERE ticket_id = ? AND service_date = ?"
+            );
+            $autoSkip->execute([$ticket['ticket_id'], $today]);
+        }
+
+        // SMS webhook integration point — configure SMS_WEBHOOK_URL and SMS_API_KEY env vars.
+        $smsWebhookUrl = getenv('SMS_WEBHOOK_URL');
+        if ($smsWebhookUrl !== false && $smsWebhookUrl !== '') {
+            $studentPhone = '';
+            $phoneQuery = $conn->prepare(
+                'SELECT mobile_number FROM public.student_profiles WHERE student_number = ? LIMIT 1'
+            );
+            $phoneQuery->execute([$ticket['student_id']]);
+            $phoneRow = $phoneQuery->fetch();
+            if ($phoneRow && !empty($phoneRow['mobile_number'])) {
+                $studentPhone = $phoneRow['mobile_number'];
+            }
+            if ($studentPhone !== '') {
+                $smsPayload = json_encode([
+                    'to'      => $studentPhone,
+                    'message' => $notificationMsg,
+                    'api_key' => getenv('SMS_API_KEY') ?: '',
+                ]);
+                $ch = curl_init($smsWebhookUrl);
+                curl_setopt_array($ch, [
+                    CURLOPT_POST           => true,
+                    CURLOPT_POSTFIELDS     => $smsPayload,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT        => 5,
+                    CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+                ]);
+                curl_exec($ch);
+                curl_close($ch);
+            }
+        }
+
+        respond(200, ['success' => true, 'data' => $ticket, 'notification' => $notificationMsg]);
     }
 
     if ($action === 'reset_day') {

@@ -73,10 +73,14 @@ function initClock() {
 
 function switchTab(targetPage, activeLink) {
   document.querySelectorAll('.page-view').forEach(page => page.classList.remove('active'));
-  document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(link => {
+    link.classList.remove('active');
+    link.removeAttribute('aria-current');
+  });
 
   targetPage.classList.add('active');
   activeLink.classList.add('active');
+  activeLink.setAttribute('aria-current', 'page');
 
   renderUI(queueManager.getState());
 }
@@ -480,9 +484,9 @@ function bindEvents() {
     switchTab(elements.pageQueue, elements.navQueue);
   });
 
-  elements.navTransactions.addEventListener('click', (e) => {
+  elements.navPaymentHistories.addEventListener('click', (e) => {
     e.preventDefault();
-    switchTab(elements.pageTransactions, elements.navTransactions);
+    switchTab(elements.pagePaymentHistories, elements.navPaymentHistories);
     fetchPaymentHistories();
   });
 
@@ -625,11 +629,11 @@ function bindEvents() {
 function init() {
   elements = {
     navQueue: document.getElementById('navQueue'),
-    navTransactions: document.getElementById('navTransactions'),
+    navPaymentHistories: document.getElementById('navPaymentHistories'),
     navReports: document.getElementById('navReports'),
 
     pageQueue: document.getElementById('pageQueue'),
-    pageTransactions: document.getElementById('pageTransactions'),
+    pagePaymentHistories: document.getElementById('pagePaymentHistories'),
     pageReports: document.getElementById('pageReports'),
 
     txSearchInput: document.getElementById('txSearchInput'),

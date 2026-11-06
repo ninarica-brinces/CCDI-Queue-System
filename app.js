@@ -257,28 +257,43 @@ function renderPaymentActivityRecordRows(records) {
 
   records.forEach(record => {
     const row = createSafeElement('tr');
-    const courseYear = record.course_year || '—';
-    const createdAt = new Date(record.created_at);
+    const getValue = (...keys) => {
+      for (const key of keys) {
+        const value = record[key];
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          return String(value).trim();
+        }
+      }
+      return '';
+    };
+    const courseYear = getValue('course_year', 'course_year_level') ||
+      [getValue('course'), getValue('year_level')].filter(Boolean).join(' / ') || '—';
+    const rawCreatedAt = getValue('created_at', 'date_time', 'datetime', 'transaction_date');
+    const createdAt = new Date(rawCreatedAt);
     const formattedDate = Number.isNaN(createdAt.getTime())
-      ? record.created_at || '—'
+      ? rawCreatedAt || '—'
       : createdAt.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+    const paymentType = getValue('payment_type', 'payment_description', 'payment_method', 'transaction_type');
+    const amount = getValue('amount', 'amount_paid');
+    const paymentDisplay = [paymentType, amount ? `₱${amount}` : ''].filter(Boolean).join(' · ');
     const fields = [
-      record.transaction_ref,
-      record.student_id,
-      record.student_name,
+      getValue('transaction_ref', 'transaction_reference', 'reference_number'),
+      getValue('student_id'),
+      getValue('student_name'),
       courseYear,
-      record.payment_type,
+      paymentDisplay,
       formattedDate,
-      record.cashier_staff
+      getValue('cashier_staff', 'cashier')
     ];
     fields.forEach(value => row.appendChild(createSafeElement('td', '', value || '—')));
 
     const statusCell = createSafeElement('td');
-    const isRecorded = record.status === 'recorded';
+    const status = getValue('status') || 'recorded';
+    const isRecorded = status.toLowerCase() === 'recorded';
     statusCell.appendChild(createSafeElement(
       'span',
       `badge-status ${isRecorded ? 'status-completed' : 'status-waiting'}`,
-      record.status === 'recorded' ? 'Recorded' : record.status
+      isRecorded ? 'Recorded' : status
     ));
     row.appendChild(statusCell);
     tbody.appendChild(row);
@@ -326,22 +341,35 @@ async function fetchPaymentActivityRecords() {
       ? {
           configured: true,
           success: true,
-          data: [],
-          pagination: { page: 1, pages: 1, total: 0 },
-          metrics: { total_records: 0, today_records: 0, active_queue_count: 0 },
+          data: result,
+          pagination: { page: 1, pages: 1, total: result.length },
+          metrics: { total_records: result.length, today_records: 0, active_queue_count: 0 },
           statuses: [],
           activity: []
         }
       : result;
+    const records = payload.data
+      .filter(record => record && typeof record === 'object')
+      .map(record => ({
+        ...record,
+        transaction_ref: record.transaction_ref ?? record.transaction_reference ?? record.reference_number ?? '',
+        course_year: record.course_year ?? record.course_year_level ?? '',
+        payment_type: record.payment_type ?? record.payment_description ?? record.payment_method ?? record.transaction_type ?? '',
+        created_at: record.created_at ?? record.date_time ?? record.datetime ?? record.transaction_date ?? '',
+        amount: record.amount ?? record.amount_paid ?? ''
+      }));
     const metrics = payload.metrics || {};
     const paginationResult = payload.pagination || {};
     const pagination = {
       page: Number(paginationResult.page) || 1,
       pages: Math.max(1, Number(paginationResult.pages) || 1),
-      total: Number(paginationResult.total ?? payload.data.length) || 0
+      total: Math.max(Number(paginationResult.total) || 0, records.length)
     };
 
-    updatePaymentActivityStatusOptions(Array.isArray(payload.statuses) ? payload.statuses : []);
+    const statuses = Array.isArray(payload.statuses) && payload.statuses.length
+      ? payload.statuses
+      : [...new Set(records.map(record => String(record.status || 'recorded').toLowerCase()))];
+    updatePaymentActivityStatusOptions(statuses);
     elements.paymentActivityRecordTotalRecords.textContent =
       Number(metrics.total_records ?? payload.total_records ?? 0).toLocaleString('en-PH');
     elements.paymentActivityRecordTodayRecords.textContent =
@@ -349,7 +377,7 @@ async function fetchPaymentActivityRecords() {
     elements.paymentActivityRecordActiveQueue.textContent =
       Number(metrics.active_queue_count ?? 0).toLocaleString('en-PH');
     renderPaymentActivity(Array.isArray(payload.activity) ? payload.activity : []);
-    renderPaymentActivityRecordRows(payload.data);
+    renderPaymentActivityRecordRows(records);
 
     paymentActivityRecordPage = pagination.page;
     elements.paymentActivityRecordPageInfo.textContent =

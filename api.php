@@ -589,42 +589,42 @@ $conn = null;
     if ($method === 'GET' && $action === 'get_cashier_payment_activity_records') {
         requireRole('cashier');
 
-        $historyTableQuery = prepareQuery($conn, "SELECT to_regclass('public.payment_histories') IS NOT NULL");
-        $hasHistoryTable = (bool) $historyTableQuery->fetchColumn();
-        $recordsSourceSql = 'public.payment_histories';
-        if ($hasHistoryTable) {
-            $historyColumnsQuery = prepareQuery($conn,
-                "SELECT column_name
-                 FROM information_schema.columns
-                 WHERE table_schema = 'public' AND table_name = 'payment_histories'"
-            );
-            $historyColumns = array_column($historyColumnsQuery->fetchAll(), 'column_name');
-            $requiredHistoryColumns = [
-                'transaction_ref', 'student_id', 'student_name', 'course_year',
-                'payment_type', 'created_at', 'cashier_staff', 'status',
-            ];
-            $hasHistoryColumns = count(array_diff($requiredHistoryColumns, $historyColumns)) === 0;
-        } else {
-            $hasHistoryColumns = false;
+        $sourceQueries = [];
+        foreach (['payment_histories', 'payment_activity_records'] as $tableName) {
+            $tableQuery = prepareQuery($conn, 'SELECT to_regclass(?) IS NOT NULL');
+            executeQuery($tableQuery, ['public.' . $tableName]);
+            if (!(bool) $tableQuery->fetchColumn()) {
+                continue;
+            }
+
+            $jsonValue = static function (array $keys): string {
+                $expressions = array_map(
+                    static fn($key) => "NULLIF(to_jsonb(payment_record)->>'$key', '')",
+                    $keys
+                );
+                return 'COALESCE(' . implode(', ', $expressions) . ')';
+            };
+            $courseYear = $jsonValue(['course_year']);
+            $courseAndYear = "NULLIF(concat_ws(' / ', " .
+                $jsonValue(['course']) . ', ' . $jsonValue(['year_level']) . "), '')";
+            $createdAt = $jsonValue(['created_at', 'date_time']);
+            $sourceQueries[] = "SELECT
+                    {$jsonValue(['transaction_ref', 'transaction_reference', 'reference_number'])} AS transaction_ref,
+                    {$jsonValue(['student_id'])} AS student_id,
+                    {$jsonValue(['student_name'])} AS student_name,
+                    COALESCE($courseYear, $courseAndYear) AS course_year,
+                    {$jsonValue(['payment_type', 'payment_description', 'payment_method', 'transaction_type'])} AS payment_type,
+                    {$jsonValue(['amount', 'amount_paid'])} AS amount,
+                    $createdAt::timestamptz AS created_at,
+                    {$jsonValue(['cashier_staff'])} AS cashier_staff,
+                    COALESCE({$jsonValue(['status'])}, 'recorded') AS status
+                FROM public.$tableName AS payment_record";
         }
 
-        if (!$hasHistoryColumns) {
-            $legacyTableQuery = prepareQuery($conn, "SELECT to_regclass('public.payment_activity_records') IS NOT NULL");
-            if (!(bool) $legacyTableQuery->fetchColumn()) {
-                respond(200, emptyPaymentActivityPayload());
-            }
-            $recordsSourceSql = "(
-                SELECT reference_number::text AS transaction_ref,
-                       student_id::text AS student_id,
-                       student_name::text AS student_name,
-                       concat_ws(' / ', NULLIF(course::text, ''), NULLIF(year_level::text, '')) AS course_year,
-                       payment_description::text AS payment_type,
-                       created_at,
-                       cashier_staff::text AS cashier_staff,
-                       COALESCE(NULLIF(status::text, ''), 'recorded') AS status
-                FROM public.payment_activity_records
-            ) AS payment_histories";
+        if (!$sourceQueries) {
+            respond(200, emptyPaymentActivityPayload());
         }
+        $recordsSourceSql = '(' . implode(' UNION ', $sourceQueries) . ') AS payment_histories';
 
         $statusOptionsQuery = prepareQuery($conn,
             "SELECT DISTINCT lower(trim(payment_histories.status)) AS status
@@ -712,7 +712,7 @@ $conn = null;
         $recordQuery = prepareQuery($conn,
             'SELECT payment_histories.transaction_ref, payment_histories.student_id,
                     payment_histories.student_name, payment_histories.course_year,
-                    payment_histories.payment_type, payment_histories.created_at,
+                    payment_histories.payment_type, payment_histories.amount, payment_histories.created_at,
                     payment_histories.cashier_staff, payment_histories.status
              FROM ' . $recordsSourceSql . $whereSql .
             ' ORDER BY payment_histories.created_at DESC, payment_histories.transaction_ref DESC' .

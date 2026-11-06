@@ -1000,57 +1000,114 @@ $conn = null;
             $conn->beginTransaction();
             $dailyLock = prepareQuery($conn, 'SELECT pg_advisory_xact_lock(hashtext(?))');
             executeQuery($dailyLock, ["daily-operations:$today"]);
+            $queueColumnsQuery = prepareQuery($conn,
+                "SELECT column_name
+                 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'queue_tickets'
+                   AND column_name IN ('completed_at', 'service_date')"
+            );
+            executeQuery($queueColumnsQuery);
+            $queueColumns = array_column($queueColumnsQuery->fetchAll(), 'column_name');
+            $hasServiceDate = in_array('service_date', $queueColumns, true);
+            $serviceDateCondition = $hasServiceDate ? ' AND service_date = ?' : '';
+            $currentParameters = [$ticketId];
+            if ($hasServiceDate) {
+                $currentParameters[] = $today;
+            }
             $current = prepareQuery($conn,
-                "SELECT ticket_id, ticket_number, student_id, student_name, course, year_level,
-                        transaction_type, payment_description, payment_period
-                 FROM public.queue_tickets
-                 WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
+                "SELECT ticket_id,
+                        to_jsonb(q)->>'ticket_number' AS ticket_number,
+                        to_jsonb(q)->>'student_id' AS student_id,
+                        to_jsonb(q)->>'student_name' AS student_name,
+                        to_jsonb(q)->>'course' AS course,
+                        to_jsonb(q)->>'year_level' AS year_level,
+                        to_jsonb(q)->>'transaction_type' AS transaction_type,
+                        to_jsonb(q)->>'payment_description' AS payment_description,
+                        to_jsonb(q)->>'payment_period' AS payment_period
+                 FROM public.queue_tickets AS q
+                 WHERE ticket_id = ?$serviceDateCondition AND status = 'serving'
                  FOR UPDATE"
             );
-            executeQuery($current, [$ticketId, $today]);
+            executeQuery($current, $currentParameters);
             $ticket = $current->fetch();
             if (!$ticket) {
                 $conn->rollBack();
                 respond(409, ['success' => false, 'message' => 'Ticket is no longer being served']);
             }
 
-            if ($status === 'completed' && $ticket['transaction_type'] === 'Tuition Payment') {
-                $paymentActivityRecord = prepareQuery($conn,
-                    "INSERT INTO public.payment_histories
-                        (transaction_ref, student_id, student_name, course_year,
-                         payment_type, cashier_staff, status)
-                     VALUES (?, ?, ?, ?, ?, ?, 'recorded')"
-                );
-                executeQuery($paymentActivityRecord, [
-                    $ticket['ticket_number'] . '-' . $ticket['ticket_id'],
-                    $ticket['student_id'],
-                    $ticket['student_name'],
-                    implode(' / ', array_filter([
-                        trim((string) ($ticket['course'] ?? '')),
-                        trim((string) ($ticket['year_level'] ?? '')),
-                    ], static fn($value) => $value !== '')),
-                    implode(' / ', array_filter([
-                        trim((string) ($ticket['payment_description'] ?? '')),
-                        trim((string) ($ticket['payment_period'] ?? '')),
-                    ], static fn($value) => $value !== '')),
-                    (string) ($_SESSION['identity']['staff_id'] ?? 'Cashier'),
-                ]);
+            $paymentActivityRecorded = null;
+            $paymentActivityWarning = null;
+            if ($status === 'completed' && ($ticket['transaction_type'] ?? '') === 'Tuition Payment') {
+                $conn->exec('SAVEPOINT payment_activity_insert');
+                try {
+                    $paymentActivityRecord = prepareQuery($conn,
+                        "INSERT INTO public.payment_histories
+                            (transaction_ref, student_id, student_name, course_year,
+                             payment_type, cashier_staff, status)
+                         VALUES (?, ?, ?, ?, ?, ?, 'recorded')"
+                    );
+                    executeQuery($paymentActivityRecord, [
+                        $ticket['ticket_number'] . '-' . $ticket['ticket_id'],
+                        $ticket['student_id'],
+                        $ticket['student_name'],
+                        implode(' / ', array_filter([
+                            trim((string) ($ticket['course'] ?? '')),
+                            trim((string) ($ticket['year_level'] ?? '')),
+                        ], static fn($value) => $value !== '')),
+                        implode(' / ', array_filter([
+                            trim((string) ($ticket['payment_description'] ?? '')),
+                            trim((string) ($ticket['payment_period'] ?? '')),
+                        ], static fn($value) => $value !== '')),
+                        (string) ($_SESSION['identity']['staff_id'] ?? 'Cashier'),
+                    ]);
+                    $paymentActivityRecorded = true;
+                } catch (PDOException $error) {
+                    $sqlState = (string) ($error->errorInfo[0] ?? $error->getCode());
+                    if (!in_array($sqlState, ['42P01', '42703'], true)) {
+                        throw $error;
+                    }
+
+                    $conn->exec('ROLLBACK TO SAVEPOINT payment_activity_insert');
+                    error_log(sprintf(
+                        'Queue API payment activity insert skipped [%s, SQLSTATE %s]: %s',
+                        $requestId,
+                        $sqlState,
+                        $error->getMessage()
+                    ));
+                    $paymentActivityRecorded = false;
+                    $paymentActivityWarning = 'Ticket completed, but its payment activity record could not be saved because the payment history schema needs an update.';
+                } finally {
+                    $conn->exec('RELEASE SAVEPOINT payment_activity_insert');
+                }
             }
 
+            $completedAtUpdate = in_array('completed_at', $queueColumns, true)
+                ? ', completed_at = CURRENT_TIMESTAMP'
+                : '';
+            $updateParameters = [$status, $ticketId];
+            if ($hasServiceDate) {
+                $updateParameters[] = $today;
+            }
             $stmt = prepareQuery($conn,
                 "UPDATE public.queue_tickets
-                 SET status = ?, completed_at = CURRENT_TIMESTAMP
-                 WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
+                 SET status = ?$completedAtUpdate
+                 WHERE ticket_id = ?$serviceDateCondition AND status = 'serving'
                  RETURNING ticket_id"
             );
-            executeQuery($stmt, [$status, $ticketId, $today]);
+            executeQuery($stmt, $updateParameters);
             if (!$stmt->fetchColumn()) {
                 $conn->rollBack();
                 respond(409, ['success' => false, 'message' => 'Ticket is no longer being served']);
             }
             $conn->commit();
-            respond(200, ['success' => true]);
+            respond(200, [
+                'success' => true,
+                'payment_activity_recorded' => $paymentActivityRecorded,
+                'message' => $paymentActivityWarning,
+            ]);
         } catch (PDOException $error) {
+            global $lastFailedQuery;
             if ($conn->inTransaction()) {
                 try {
                     $conn->rollBack();
@@ -1066,9 +1123,10 @@ $conn = null;
             $sqlState = (string) ($error->errorInfo[0] ?? $error->getCode());
             $isSchemaError = in_array($sqlState, ['42P01', '42703'], true);
             error_log(sprintf(
-                'Queue API ticket status update failure [%s, SQLSTATE %s]: %s',
+                'Queue API ticket status update failure [%s, SQLSTATE %s, SQL %s]: %s',
                 $requestId,
                 $sqlState,
+                $lastFailedQuery['sql'] ?? 'unavailable',
                 $error->getMessage()
             ));
 
@@ -1195,6 +1253,21 @@ $conn = null;
 
     respond(400, ['success' => false, 'message' => 'Unknown action']);
 } catch (PDOException $error) {
+    $sqlState = (string) ($error->errorInfo[0] ?? $error->getCode());
+    if (
+        ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' &&
+        ($_GET['action'] ?? '') === 'get_cashier_payment_activity_records' &&
+        in_array($sqlState, ['42P01', '42703'], true)
+    ) {
+        error_log(sprintf(
+            'Queue API payment activity schema fallback [%s, SQLSTATE %s]: %s',
+            $requestId,
+            $sqlState,
+            $error->getMessage()
+        ));
+        respond(200, emptyPaymentActivityPayload());
+    }
+
     handleApiException($error);
 } catch (Throwable $error) {
     handleApiException($error);

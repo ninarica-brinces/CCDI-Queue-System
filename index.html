@@ -148,31 +148,45 @@
       gap: 1rem;
       justify-content: center;
       margin-top: 2rem;
+      width: 100%;
     }
 
     .portals a {
-      background: #1d4ed8;
-      border-radius: 6px;
+      display: inline-flex;
+      min-width: 200px;
+      min-height: 56px;
+      align-items: center;
+      justify-content: center;
+      padding: 16px 28px;
+      border: 1px solid rgba(255, 255, 255, .22);
+      border-radius: 12px;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
       color: #fff;
+      font-size: 16px;
       font-weight: 600;
-      padding: 0.8rem 1.25rem;
       text-decoration: none;
-      transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, .22);
+      transition: all 0.2s ease;
     }
 
     .portals a:hover {
-      background: #1e40af;
-      box-shadow: 0 6px 12px rgba(15, 23, 42, 0.2);
-      transform: translateY(-2px) scale(1.02);
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, .3);
+      transform: translateY(-2px);
     }
 
     .portals a:active {
-      transform: translateY(0) scale(.98);
-      box-shadow: none;
+      transform: translateY(0) scale(.99);
+      box-shadow: 0 5px 12px rgba(15, 23, 42, .2);
     }
 
     .portals a:last-child {
-      background: #475569;
+      border-color: rgba(203, 213, 225, .35);
+      background: linear-gradient(135deg, #475569 0%, #334155 100%);
+    }
+
+    .portals a:last-child:hover {
+      background: linear-gradient(135deg, #64748b 0%, #475569 100%);
     }
 
     @media (max-width: 600px) {
@@ -244,6 +258,9 @@
     </div>
   </header>
   <main>
+    <div class="logo-container" style="text-align: center; margin-bottom: 15px;">
+      <img src="ccdi-logo.png.jpg" alt="CCDI Logo" style="width: 90px; height: 90px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255, 255, 255, 0.3); box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+    </div>
     <h1>CCDI Cashier Recording Queue System</h1>
     <p>Choose a portal to continue.</p>
     <nav class="portals" aria-label="System portals">

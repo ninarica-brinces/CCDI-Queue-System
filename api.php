@@ -602,6 +602,7 @@ $conn = null;
         requireRole('cashier');
 
         $sourceQueries = [];
+        $sourceProbeError = null;
         foreach (['payment_histories', 'payment_activity_records'] as $tableName) {
             $tableQuery = prepareQuery($conn, 'SELECT to_regclass(?) IS NOT NULL');
             executeQuery($tableQuery, ['public.' . $tableName]);
@@ -622,7 +623,7 @@ $conn = null;
             $courseAndYear = "NULLIF(concat_ws(' / ', " .
                 $jsonValue(['course']) . ', ' . $jsonValue(['year_level']) . "), '')";
             $createdAt = $jsonValue(['created_at', 'date_time']);
-            $sourceQueries[] = "SELECT
+            $sourceQuery = "SELECT
                     {$jsonValue(['transaction_ref', 'transaction_reference', 'reference_number'])} AS transaction_ref,
                     {$jsonValue(['student_id'])} AS student_id,
                     {$jsonValue(['student_name'])} AS student_name,
@@ -633,9 +634,26 @@ $conn = null;
                     {$jsonValue(['cashier_staff'])} AS cashier_staff,
                     COALESCE({$jsonValue(['status'])}, 'recorded') AS status
                 FROM public.$tableName AS payment_record";
+            try {
+                $sourceProbe = prepareQuery($conn, $sourceQuery . ' LIMIT 0');
+                executeQuery($sourceProbe);
+                $sourceQueries[] = $sourceQuery;
+            } catch (PDOException $error) {
+                $sourceProbeError = $error;
+                error_log(sprintf(
+                    'Queue API payment activity source unavailable [%s, table %s, SQLSTATE %s]: %s',
+                    $requestId,
+                    $tableName,
+                    (string) ($error->errorInfo[0] ?? $error->getCode()),
+                    $error->getMessage()
+                ));
+            }
         }
 
         if (!$sourceQueries) {
+            if ($sourceProbeError ?? null) {
+                throw $sourceProbeError;
+            }
             respond(200, emptyPaymentActivityPayload());
         }
         $recordsSourceSql = '(' . implode(' UNION ', $sourceQueries) . ') AS payment_histories';
@@ -1272,6 +1290,7 @@ $conn = null;
     if (
         ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' &&
         in_array($_GET['action'] ?? '', ['get_cashier_payment_activity_records', 'get_c_status-all'], true) &&
+        !isDevelopmentMode() &&
         in_array($sqlState, ['42P01', '42703'], true)
     ) {
         error_log(sprintf(

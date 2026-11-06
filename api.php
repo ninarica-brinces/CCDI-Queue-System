@@ -782,7 +782,6 @@ $conn = null;
             date_default_timezone_get(),
             $localToday->modify('-6 days')->format('Y-m-d\TH:i:sP'),
             $endOfDay,
-            date_default_timezone_get(),
         ]);
         $activityByDate = [];
         foreach ($activityQuery->fetchAll() as $activityRow) {

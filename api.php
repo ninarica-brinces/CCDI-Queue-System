@@ -903,7 +903,7 @@ $conn = null;
         executeQuery($dailyCount, [$today, $today]);
         if ((int) $dailyCount->fetchColumn() >= 100) {
             $conn->rollBack();
-            respond(409, ['success' => false, 'message' => 'Daily ticket limit of 100 students has been reached.']);
+            respond(409, ['success' => false, 'message' => 'Daily ticket limit of 100 reached for today.']);
         }
 
         $count = prepareQuery($conn,
@@ -996,59 +996,91 @@ $conn = null;
             respond(400, ['success' => false, 'message' => 'A valid ticket ID and terminal status are required']);
         }
 
-        $conn->beginTransaction();
-        $dailyLock = prepareQuery($conn, 'SELECT pg_advisory_xact_lock(hashtext(?))');
-        executeQuery($dailyLock, ["daily-operations:$today"]);
-        $current = prepareQuery($conn,
-            "SELECT ticket_id, ticket_number, student_id, student_name, course, year_level,
-                    transaction_type, payment_description, payment_period
-             FROM public.queue_tickets
-             WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
-             FOR UPDATE"
-        );
-        executeQuery($current, [$ticketId, $today]);
-        $ticket = $current->fetch();
-        if (!$ticket) {
-            $conn->rollBack();
-            respond(409, ['success' => false, 'message' => 'Ticket is no longer being served']);
-        }
-
-        if ($status === 'completed' && $ticket['transaction_type'] === 'Tuition Payment') {
-            $paymentActivityRecord = prepareQuery($conn,
-                "INSERT INTO public.payment_histories
-                    (transaction_ref, student_id, student_name, course_year,
-                     payment_type, cashier_staff, status)
-                 VALUES (?, ?, ?, ?, ?, ?, 'recorded')"
+        try {
+            $conn->beginTransaction();
+            $dailyLock = prepareQuery($conn, 'SELECT pg_advisory_xact_lock(hashtext(?))');
+            executeQuery($dailyLock, ["daily-operations:$today"]);
+            $current = prepareQuery($conn,
+                "SELECT ticket_id, ticket_number, student_id, student_name, course, year_level,
+                        transaction_type, payment_description, payment_period
+                 FROM public.queue_tickets
+                 WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
+                 FOR UPDATE"
             );
-            executeQuery($paymentActivityRecord, [
-                $ticket['ticket_number'] . '-' . $ticket['ticket_id'],
-                $ticket['student_id'],
-                $ticket['student_name'],
-                implode(' / ', array_filter([
-                    trim((string) ($ticket['course'] ?? '')),
-                    trim((string) ($ticket['year_level'] ?? '')),
-                ], static fn($value) => $value !== '')),
-                implode(' / ', array_filter([
-                    trim((string) ($ticket['payment_description'] ?? '')),
-                    trim((string) ($ticket['payment_period'] ?? '')),
-                ], static fn($value) => $value !== '')),
-                (string) ($_SESSION['identity']['staff_id'] ?? 'Cashier'),
+            executeQuery($current, [$ticketId, $today]);
+            $ticket = $current->fetch();
+            if (!$ticket) {
+                $conn->rollBack();
+                respond(409, ['success' => false, 'message' => 'Ticket is no longer being served']);
+            }
+
+            if ($status === 'completed' && $ticket['transaction_type'] === 'Tuition Payment') {
+                $paymentActivityRecord = prepareQuery($conn,
+                    "INSERT INTO public.payment_histories
+                        (transaction_ref, student_id, student_name, course_year,
+                         payment_type, cashier_staff, status)
+                     VALUES (?, ?, ?, ?, ?, ?, 'recorded')"
+                );
+                executeQuery($paymentActivityRecord, [
+                    $ticket['ticket_number'] . '-' . $ticket['ticket_id'],
+                    $ticket['student_id'],
+                    $ticket['student_name'],
+                    implode(' / ', array_filter([
+                        trim((string) ($ticket['course'] ?? '')),
+                        trim((string) ($ticket['year_level'] ?? '')),
+                    ], static fn($value) => $value !== '')),
+                    implode(' / ', array_filter([
+                        trim((string) ($ticket['payment_description'] ?? '')),
+                        trim((string) ($ticket['payment_period'] ?? '')),
+                    ], static fn($value) => $value !== '')),
+                    (string) ($_SESSION['identity']['staff_id'] ?? 'Cashier'),
+                ]);
+            }
+
+            $stmt = prepareQuery($conn,
+                "UPDATE public.queue_tickets
+                 SET status = ?, completed_at = CURRENT_TIMESTAMP
+                 WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
+                 RETURNING ticket_id"
+            );
+            executeQuery($stmt, [$status, $ticketId, $today]);
+            if (!$stmt->fetchColumn()) {
+                $conn->rollBack();
+                respond(409, ['success' => false, 'message' => 'Ticket is no longer being served']);
+            }
+            $conn->commit();
+            respond(200, ['success' => true]);
+        } catch (PDOException $error) {
+            if ($conn->inTransaction()) {
+                try {
+                    $conn->rollBack();
+                } catch (Throwable $rollbackError) {
+                    error_log(sprintf(
+                        'Queue API status update rollback failure [%s]: %s',
+                        $requestId,
+                        $rollbackError->getMessage()
+                    ));
+                }
+            }
+
+            $sqlState = (string) ($error->errorInfo[0] ?? $error->getCode());
+            $isSchemaError = in_array($sqlState, ['42P01', '42703'], true);
+            error_log(sprintf(
+                'Queue API ticket status update failure [%s, SQLSTATE %s]: %s',
+                $requestId,
+                $sqlState,
+                $error->getMessage()
+            ));
+
+            respond(503, [
+                'success' => false,
+                'code' => $isSchemaError ? 'DATABASE_SCHEMA_MISMATCH' : 'DATABASE_OPERATION_FAILED',
+                'request_id' => $requestId,
+                'message' => $isSchemaError
+                    ? 'Ticket status could not be updated because the database schema is not ready. Apply the required migrations and try again.'
+                    : 'Ticket status could not be updated because of a database error. Please try again later.',
             ]);
         }
-
-        $stmt = prepareQuery($conn,
-            "UPDATE public.queue_tickets
-             SET status = ?, completed_at = CURRENT_TIMESTAMP
-             WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
-             RETURNING ticket_id"
-        );
-        executeQuery($stmt, [$status, $ticketId, $today]);
-        if (!$stmt->fetchColumn()) {
-            $conn->rollBack();
-            respond(409, ['success' => false, 'message' => 'Ticket is no longer being served']);
-        }
-        $conn->commit();
-        respond(200, ['success' => true]);
     }
 
     if ($action === 'recall_ticket') {

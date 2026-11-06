@@ -705,9 +705,6 @@
 </div>
 
 <div class="nav-actions">
-  <button class="btn-nav" id="navPaymentActivityRecordBtn" onclick="viewStudentPaymentActivityRecord()">
-    Payment Activity Record
-  </button>
   <button class="btn-nav" onclick="switchView('homeView')">
     🏠 Home
   </button>
@@ -2100,57 +2097,6 @@
     }
 
     
-    /* =========================================
-       VIEW PAYMENT ACTIVITY RECORD (Spec 2)
-    ========================================= */
-    async function viewStudentPaymentActivityRecord() {
-      if (!activeStudentId) {
-        alert("Please sign in with your student account first.");
-        openStudentModal();
-        return;
-      }
-
-      // Check active queue status: waiting, serving, completed
-      const hasQueueTicket = remoteTickets.some(
-        ticket => ticket.student_id === activeStudentId &&
-          ['waiting', 'serving', 'completed'].includes(ticket.status)
-      );
-
-      if (!hasQueueTicket) {
-        alert("You must join the queue first to view payment activity records.");
-        return;
-      }
-
-      try {
-        const response = await fetch('./api.php?action=get_student_payment_activity_records', { cache: 'no-store' });
-        const result = await response.json();
-        if (!response.ok || !result.success) {
-          throw new Error(result.message || "You must join the queue first to view payment activity records.");
-        }
-        showPaymentActivityRecordModal(result);
-      } catch (err) {
-        alert(err.message || "Unable to load payment activity records.");
-      }
-    }
-
-    function showPaymentActivityRecordModal(payload) {
-      const tbody = document.getElementById('spmTableBody');
-
-      const records = payload.data || [];
-      if (records.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No payment activity records found.</td></tr>';
-      } else {
-        tbody.innerHTML = records.map(r => `
-          <tr>
-            <td><strong>${escapeHtml(r.reference_number)}</strong></td>
-            <td>${escapeHtml(r.payment_description || 'Payment activity')}</td>
-            <td>${new Date(r.created_at).toLocaleString('en-PH', { dateStyle: 'short', timeStyle: 'short' })}</td>
-          </tr>
-        `).join('');
-      }
-      document.getElementById('studentPaymentModal').classList.add('open');
-    }
-
     function startQueuePolling() {
       if (queueRefreshTimer !== null) return;
       queueRefreshTimer = setInterval(refreshQueueState, 1500);
@@ -3161,33 +3107,6 @@ restoreStudentSession();
     if (requestedPortal === 'student') window.openStudentModal();
     if (requestedPortal === 'cashier') window.openCashierModal();
   </script>
-
-  <!-- PAYMENT ACTIVITY RECORDS MODAL -->
-  <div class="modal-overlay" id="studentPaymentModal">
-    <div class="modal-box" style="max-width: 550px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-        <h3 style="font-size:1.2rem; color:var(--text-dark); margin:0;">Payment Activity Record</h3>
-        <button onclick="closeModal('studentPaymentModal')" style="background:none; border:none; font-size:1.4rem; cursor:pointer; color:var(--text-muted);">&times;</button>
-      </div>
-      <div class="table-container" style="max-height: 280px; overflow-y:auto; border:1px solid var(--border-color); border-radius:6px;">
-        <table>
-          <thead>
-            <tr>
-              <th>Transaction Reference</th>
-              <th>Payment Type or Transaction Description</th>
-              <th>Date and Time</th>
-            </tr>
-          </thead>
-          <tbody id="spmTableBody">
-            <tr><td colspan="3" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No payment activity records found.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div style="margin-top:1rem; text-align:right;">
-        <button class="btn-portal" onclick="closeModal('studentPaymentModal')" style="padding:0.5rem 1.2rem;">Close</button>
-      </div>
-    </div>
-  </div>
 
 </body>
 </html>

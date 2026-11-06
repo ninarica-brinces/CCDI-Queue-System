@@ -89,6 +89,94 @@ function respond($status, $payload)
     exit();
 }
 
+function executeQuery(PDOStatement $statement, array $parameters = [])
+{
+    global $lastFailedQuery;
+    $lastFailedQuery = null;
+    try {
+        return $statement->execute($parameters);
+    } catch (PDOException $error) {
+        $lastFailedQuery = [
+            'sql' => $statement->queryString,
+            'parameters' => $parameters,
+        ];
+        throw $error;
+    }
+}
+
+function prepareQuery(PDO $connection, string $sql)
+{
+    global $lastFailedQuery;
+    $lastFailedQuery = ['sql' => $sql, 'parameters' => []];
+    $statement = $connection->prepare($sql);
+    $lastFailedQuery = null;
+    return $statement;
+}
+
+function isDevelopmentMode()
+{
+    return in_array(strtolower((string) getenv('APP_ENV')), ['development', 'local'], true)
+        || filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+}
+
+function handleApiException(Throwable $error)
+{
+    global $conn, $requestId, $lastFailedQuery;
+
+    if (($conn ?? null) instanceof PDO && $conn->inTransaction()) {
+        try {
+            $conn->rollBack();
+        } catch (Throwable $rollbackError) {
+            error_log(sprintf(
+                'Queue API rollback failure [%s]: %s',
+                $requestId ?? 'unavailable',
+                $rollbackError->getMessage()
+            ));
+        }
+    }
+
+    $sqlState = $error instanceof PDOException
+        ? (string) ($error->errorInfo[0] ?? $error->getCode())
+        : (string) $error->getCode();
+    $diagnostic = [
+        'request_id' => $requestId ?? 'unavailable',
+        'exception' => get_class($error),
+        'sqlstate' => $sqlState,
+        'message' => $error->getMessage(),
+        'file' => $error->getFile(),
+        'line' => $error->getLine(),
+    ];
+    if ($error instanceof PDOException && $lastFailedQuery !== null) {
+        $diagnostic['sql'] = $lastFailedQuery['sql'];
+        $diagnostic['parameter_count'] = count($lastFailedQuery['parameters']);
+        if (isDevelopmentMode()) {
+            $diagnostic['parameters'] = $lastFailedQuery['parameters'];
+        }
+    }
+    error_log('Queue API error: ' . json_encode($diagnostic, JSON_INVALID_UTF8_SUBSTITUTE));
+
+    $isConnectionFailure = $error instanceof PDOException
+        && (str_starts_with($sqlState, '08') || in_array($sqlState, ['57P01', '57P02', '57P03'], true));
+    $payload = [
+        'success' => false,
+        'code' => $isConnectionFailure ? 'DATABASE_UNAVAILABLE' : 'INTERNAL_SERVER_ERROR',
+        'request_id' => $requestId ?? null,
+        'message' => $isConnectionFailure
+            ? 'The database is temporarily unavailable. Please try again shortly.'
+            : 'The queue service encountered a server or database error. Please try again later.',
+    ];
+    if ($error instanceof PDOException && isDevelopmentMode()) {
+        $payload['message'] = 'Database error: ' . $error->getMessage();
+        $payload['debug'] = [
+            'sqlstate' => $sqlState,
+            'sql' => $lastFailedQuery['sql'] ?? null,
+            'parameters' => $lastFailedQuery['parameters'] ?? [],
+        ];
+    }
+
+    respond($isConnectionFailure ? 503 : 500, $payload);
+}
+
 function requestString($input, $key, $maximumLength = 500)
 {
     $value = $input[$key] ?? '';
@@ -245,7 +333,7 @@ $conn = null;
     }
 
     $routes = [
-        'GET' => ['auth_status', 'get_queue_state', 'get_state', 'get_student_payment_activity_records', 'get_cashier_payment_activity_records'],
+        'GET' => ['auth_status', 'get_queue_state', 'get_state', 'get_cashier_payment_activity_records'],
         'POST' => [
             'cashier_login',
             'student_login',
@@ -301,10 +389,10 @@ $conn = null;
             respond(400, ['success' => false, 'message' => 'Mangyaring ilagay ang Username at Password.']);
         }
 
-        $stmt = $conn->prepare(
+        $stmt = prepareQuery($conn,
             'SELECT * FROM public.system_users WHERE username = ? AND is_active = TRUE'
         );
-        $stmt->execute([$username]);
+        executeQuery($stmt, [$username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user && ($password === $user['password'] || password_verify($password, $user['password']))) {
@@ -336,7 +424,7 @@ $conn = null;
             ]);
         }
 
-        $student = $conn->prepare(
+        $student = prepareQuery($conn,
             "SELECT student_number,
                     student_number AS student_id,
                     concat_ws(' ', NULLIF(btrim(first_name), ''), NULLIF(btrim(last_name), '')) AS full_name,
@@ -346,7 +434,7 @@ $conn = null;
                AND lower(concat_ws(' ', btrim(first_name), btrim(last_name))) = lower(btrim(?))
              LIMIT 1"
         );
-        $student->execute([$studentId, $studentName]);
+        executeQuery($student, [$studentId, $studentName]);
         $profile = $student->fetch();
         if (!$profile) {
             respond(403, [
@@ -387,13 +475,13 @@ $conn = null;
             'csrf_token' => $_SESSION['csrf_token'],
         ];
         if ($role === 'student') {
-            $student = $conn->prepare(
+            $student = prepareQuery($conn,
                 "SELECT student_number AS student_id,
                         btrim(first_name) || ' ' || btrim(last_name) AS full_name,
                 NULL AS course, NULL AS address, NULL AS year_level
                  FROM public.student_profiles WHERE student_number = ? LIMIT 1"
             );
-            $student->execute([$identity['student_id'] ?? '']);
+            executeQuery($student, [$identity['student_id'] ?? '']);
             $profile = $student->fetch();
             if (!$profile) {
                 session_destroy();
@@ -431,19 +519,19 @@ $conn = null;
         $studentId = $role === 'student' ? (string) ($_SESSION['identity']['student_id'] ?? '') : '';
         $hasActiveQueue = true;
         if ($role === 'student' && $studentId !== '') {
-            $actCheck = $conn->prepare(
+            $actCheck = prepareQuery($conn,
                 "SELECT 1 FROM public.queue_tickets
                  WHERE service_date = ? AND student_id = ?
                    AND status IN ('waiting', 'serving', 'completed')
                  LIMIT 1"
             );
-            $actCheck->execute([$today, $studentId]);
+            executeQuery($actCheck, [$today, $studentId]);
             $hasActiveQueue = (bool) $actCheck->fetchColumn();
         }
-        $stmt = $conn->prepare(
+        $stmt = prepareQuery($conn,
             'SELECT * FROM public.queue_tickets WHERE service_date = ? ORDER BY created_at ASC, ticket_id ASC'
         );
-        $stmt->execute([$today]);
+        executeQuery($stmt, [$today]);
         $tickets = array_map(
             static fn($ticket) => restrictTicketForRole($ticket, $role, $studentId, $hasActiveQueue),
             $stmt->fetchAll()
@@ -451,50 +539,6 @@ $conn = null;
         respond(200, ['success' => true, 'data' => $tickets, 'has_active_queue' => $hasActiveQueue]);
     }
 
-
-    // --- Spec 2: Payment activity record access gate ---
-    // Students can only retrieve their payment activity records if they have a queue ticket for today.
-    if ($method === 'GET' && $action === 'get_student_payment_activity_records') {
-        $role = $_SESSION['role'] ?? '';
-        if (!in_array($role, ['student', 'cashier'], true)) {
-            respond(401, ['success' => false, 'message' => 'Authentication required']);
-        }
-        requireRole($role, false);
-        $studentId = $role === 'student'
-            ? (string) ($_SESSION['identity']['student_id'] ?? '')
-            : trim((string) ($_GET['student_id'] ?? ''));
-        if ($studentId === '') {
-            respond(400, ['success' => false, 'message' => 'Student ID is required']);
-        }
-        $queueCheck = $conn->prepare(
-            "SELECT 1 FROM public.queue_tickets
-             WHERE service_date = ? AND student_id = ?
-               AND status IN ('waiting', 'serving', 'completed')
-             LIMIT 1"
-        );
-        $queueCheck->execute([$today, $studentId]);
-        if (!$queueCheck->fetchColumn()) {
-            respond(403, [
-                'success' => false,
-                'code'    => 'QUEUE_ACCESS_REQUIRED',
-                'message' => 'You must join the queue first to view payment activity records.',
-            ]);
-        }
-        $activities = $conn->prepare(
-            'SELECT transaction_ref AS reference_number,
-                    payment_type AS payment_description, created_at
-             FROM public.payment_histories WHERE student_id = ?
-             ORDER BY created_at DESC LIMIT 50'
-        );
-        $activities->execute([$studentId]);
-        $activityRows = $activities->fetchAll();
-
-        respond(200, [
-            'success' => true,
-            'student_id' => $studentId,
-            'data' => $activityRows
-        ]);
-    }
 
     if ($method === 'GET' && $action === 'get_cashier_payment_activity_records') {
         requireRole('cashier');
@@ -563,8 +607,8 @@ $conn = null;
         }
         $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
 
-        $countQuery = $conn->prepare('SELECT COUNT(*) FROM public.payment_histories' . $whereSql);
-        $countQuery->execute($parameters);
+        $countQuery = prepareQuery($conn, 'SELECT COUNT(*) FROM public.payment_histories' . $whereSql);
+        executeQuery($countQuery, $parameters);
         $filteredCount = (int) $countQuery->fetchColumn();
 
         $pageSize = 50;
@@ -573,34 +617,34 @@ $conn = null;
             respond(400, ['success' => false, 'message' => 'Invalid payment activity page']);
         }
         $page = min($page, max(1, (int) ceil($filteredCount / $pageSize)));
-        $recordQuery = $conn->prepare(
+        $recordQuery = prepareQuery($conn,
             'SELECT transaction_ref, student_id, student_name, course_year,
                     payment_type, created_at, cashier_staff, status
              FROM public.payment_histories' . $whereSql .
             ' ORDER BY created_at DESC, transaction_ref DESC' .
             ' LIMIT ' . $pageSize . ' OFFSET ' . (($page - 1) * $pageSize)
         );
-        $recordQuery->execute($parameters);
+        executeQuery($recordQuery, $parameters);
         $records = $recordQuery->fetchAll();
 
-        $metricsQuery = $conn->prepare(
+        $metricsQuery = prepareQuery($conn,
             "SELECT COUNT(*) AS total_records,
                     COUNT(*) FILTER (WHERE created_at >= ? AND created_at < ?) AS today_records
              FROM public.payment_histories"
         );
-        $metricsQuery->execute([
+        executeQuery($metricsQuery, [
             $localToday->format('Y-m-d\TH:i:sP'),
             $endOfDay,
         ]);
         $metrics = $metricsQuery->fetch();
 
-        $queueCountQuery = $conn->prepare(
+        $queueCountQuery = prepareQuery($conn,
             "SELECT COUNT(*) FROM public.queue_tickets
              WHERE service_date = ? AND status IN ('waiting', 'serving')"
         );
-        $queueCountQuery->execute([$today]);
+        executeQuery($queueCountQuery, [$today]);
 
-        $activityQuery = $conn->prepare(
+        $activityQuery = prepareQuery($conn,
             "SELECT (created_at AT TIME ZONE ?)::date AS activity_date,
                     COUNT(*) AS records
              FROM public.payment_histories
@@ -608,7 +652,7 @@ $conn = null;
              GROUP BY (created_at AT TIME ZONE ?)::date
              ORDER BY activity_date"
         );
-        $activityQuery->execute([
+        executeQuery($activityQuery, [
             date_default_timezone_get(),
             $localToday->modify('-6 days')->format('Y-m-d\TH:i:sP'),
             $endOfDay,
@@ -681,9 +725,9 @@ $conn = null;
         }
 
         $conn->beginTransaction();
-        $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
-        $dailyLock->execute(["daily-operations:$today"]);
-        $student = $conn->prepare(
+        $dailyLock = prepareQuery($conn, 'SELECT pg_advisory_xact_lock(hashtext(?))');
+        executeQuery($dailyLock, ["daily-operations:$today"]);
+        $student = prepareQuery($conn,
             "SELECT student_number AS student_id,
                     btrim(first_name) || ' ' || btrim(last_name) AS full_name,
             NULL AS course, NULL AS address, NULL AS year_level
@@ -695,7 +739,7 @@ $conn = null;
                    ) = regexp_replace(lower(btrim(?)), '[[:space:]]+', ' ', 'g')
              LIMIT 1"
         );
-        $student->execute([$studentId, $studentName]);
+        executeQuery($student, [$studentId, $studentName]);
         $profile = $student->fetch();
         if (!$profile) {
             $conn->rollBack();
@@ -740,31 +784,31 @@ $conn = null;
             $conn->rollBack();
             respond(400, ['success' => false, 'message' => 'Select a supported tuition payment option']);
         }
-        $studentLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
-        $studentLock->execute(["student:$today:{$profile['student_id']}"]);
-        $active = $conn->prepare(
+        $studentLock = prepareQuery($conn, 'SELECT pg_advisory_xact_lock(hashtext(?))');
+        executeQuery($studentLock, ["student:$today:{$profile['student_id']}"]);
+        $active = prepareQuery($conn,
             "SELECT 1 FROM public.queue_tickets
              WHERE service_date = ? AND student_id = ? AND status IN ('waiting', 'serving')
              LIMIT 1"
         );
-        $active->execute([$today, $profile['student_id']]);
+        executeQuery($active, [$today, $profile['student_id']]);
         if ($active->fetchColumn()) {
             $conn->rollBack();
             respond(409, ['success' => false, 'message' => 'This student already has an active ticket today']);
         }
 
-        $dailyCount = $conn->prepare(
+        $dailyCount = prepareQuery($conn,
             "SELECT
                 (SELECT COUNT(*) FROM public.queue_tickets WHERE service_date = ?) +
                 (SELECT COALESCE(SUM(total_tickets), 0) FROM public.daily_reports WHERE report_date = ?)"
         );
-        $dailyCount->execute([$today, $today]);
+        executeQuery($dailyCount, [$today, $today]);
         if ((int) $dailyCount->fetchColumn() >= 100) {
             $conn->rollBack();
             respond(409, ['success' => false, 'message' => 'Daily ticket limit of 100 students has been reached.']);
         }
 
-        $count = $conn->prepare(
+        $count = prepareQuery($conn,
             "SELECT
                 (SELECT COUNT(*) FROM public.queue_tickets WHERE lane = ? AND service_date = ?) +
                 (SELECT COALESCE(SUM(
@@ -772,17 +816,17 @@ $conn = null;
                  ), 0)
                  FROM public.daily_reports WHERE report_date = ?)"
         );
-        $count->execute([$lane, $today, $lane, $today]);
+        executeQuery($count, [$lane, $today, $lane, $today]);
         $prefix = $lane === 'Priority' ? 'P' : 'A';
         $ticketNumber = $prefix . '-' . str_pad((string) ((int) $count->fetchColumn() + 1), 3, '0', STR_PAD_LEFT);
-        $insert = $conn->prepare(
+        $insert = prepareQuery($conn,
             "INSERT INTO public.queue_tickets
                 (ticket_number, lane, student_name, student_id, course, address, year_level,
                  transaction_type, payment_description, payment_period, notes, status, service_date)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?)
              RETURNING ticket_id"
         );
-        $insert->execute([
+        executeQuery($insert, [
             $ticketNumber,
             $lane,
             $profile['full_name'],
@@ -810,36 +854,36 @@ $conn = null;
         }
 
         $conn->beginTransaction();
-        $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
-        $dailyLock->execute(["daily-operations:$today"]);
-        $lock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
-        $lock->execute(["serving:$today:$lane"]);
-        $serving = $conn->prepare(
+        $dailyLock = prepareQuery($conn, 'SELECT pg_advisory_xact_lock(hashtext(?))');
+        executeQuery($dailyLock, ["daily-operations:$today"]);
+        $lock = prepareQuery($conn, 'SELECT pg_advisory_xact_lock(hashtext(?))');
+        executeQuery($lock, ["serving:$today:$lane"]);
+        $serving = prepareQuery($conn,
             "SELECT 1 FROM public.queue_tickets
              WHERE service_date = ? AND lane = ? AND status = 'serving' LIMIT 1"
         );
-        $serving->execute([$today, $lane]);
+        executeQuery($serving, [$today, $lane]);
         if ($serving->fetchColumn()) {
             $conn->rollBack();
             respond(409, ['success' => false, 'message' => 'A ticket is already being served in this lane']);
         }
-        $next = $conn->prepare(
+        $next = prepareQuery($conn,
             "SELECT ticket_id FROM public.queue_tickets
              WHERE service_date = ? AND lane = ? AND status = 'waiting'
              ORDER BY created_at ASC, ticket_id ASC LIMIT 1"
         );
-        $next->execute([$today, $lane]);
+        executeQuery($next, [$today, $lane]);
         $ticketId = $next->fetchColumn();
         if ($ticketId === false) {
             $conn->rollBack();
             respond(404, ['success' => false, 'message' => 'No tickets are waiting in this lane']);
         }
-        $update = $conn->prepare(
+        $update = prepareQuery($conn,
             "UPDATE public.queue_tickets SET status = 'serving'
              WHERE ticket_id = ? AND service_date = ? AND status = 'waiting'
              RETURNING *"
         );
-        $update->execute([$ticketId, $today]);
+        executeQuery($update, [$ticketId, $today]);
         $ticket = $update->fetch();
         $conn->commit();
         respond(200, ['success' => true, 'data' => restrictTicketForRole($ticket, 'cashier')]);
@@ -855,16 +899,16 @@ $conn = null;
         }
 
         $conn->beginTransaction();
-        $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
-        $dailyLock->execute(["daily-operations:$today"]);
-        $current = $conn->prepare(
+        $dailyLock = prepareQuery($conn, 'SELECT pg_advisory_xact_lock(hashtext(?))');
+        executeQuery($dailyLock, ["daily-operations:$today"]);
+        $current = prepareQuery($conn,
             "SELECT ticket_id, ticket_number, student_id, student_name, course, year_level,
                     transaction_type, payment_description, payment_period
              FROM public.queue_tickets
              WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
              FOR UPDATE"
         );
-        $current->execute([$ticketId, $today]);
+        executeQuery($current, [$ticketId, $today]);
         $ticket = $current->fetch();
         if (!$ticket) {
             $conn->rollBack();
@@ -872,13 +916,13 @@ $conn = null;
         }
 
         if ($status === 'completed' && $ticket['transaction_type'] === 'Tuition Payment') {
-            $paymentActivityRecord = $conn->prepare(
+            $paymentActivityRecord = prepareQuery($conn,
                 "INSERT INTO public.payment_histories
                     (transaction_ref, student_id, student_name, course_year,
                      payment_type, cashier_staff, status)
                  VALUES (?, ?, ?, ?, ?, ?, 'recorded')"
             );
-            $paymentActivityRecord->execute([
+            executeQuery($paymentActivityRecord, [
                 $ticket['ticket_number'] . '-' . $ticket['ticket_id'],
                 $ticket['student_id'],
                 $ticket['student_name'],
@@ -894,13 +938,13 @@ $conn = null;
             ]);
         }
 
-        $stmt = $conn->prepare(
+        $stmt = prepareQuery($conn,
             "UPDATE public.queue_tickets
              SET status = ?, completed_at = CURRENT_TIMESTAMP
              WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
              RETURNING ticket_id"
         );
-        $stmt->execute([$status, $ticketId, $today]);
+        executeQuery($stmt, [$status, $ticketId, $today]);
         if (!$stmt->fetchColumn()) {
             $conn->rollBack();
             respond(409, ['success' => false, 'message' => 'Ticket is no longer being served']);
@@ -916,21 +960,21 @@ $conn = null;
         }
 
         $conn->beginTransaction();
-        $dailyLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
-        $dailyLock->execute(["daily-operations:$today"]);
-        $stmt = $conn->prepare(
+        $dailyLock = prepareQuery($conn, 'SELECT pg_advisory_xact_lock(hashtext(?))');
+        executeQuery($dailyLock, ["daily-operations:$today"]);
+        $stmt = prepareQuery($conn,
             "UPDATE public.queue_tickets
              SET recall_count = recall_count + 1
              WHERE ticket_id = ? AND service_date = ? AND status = 'serving' AND recall_count < 3
              RETURNING ticket_id, ticket_number, recall_count, student_id"
         );
-        $stmt->execute([$ticketId, $today]);
+        executeQuery($stmt, [$ticketId, $today]);
         $ticket = $stmt->fetch();
         if (!$ticket) {
-            $current = $conn->prepare(
+            $current = prepareQuery($conn,
                 'SELECT status, recall_count FROM public.queue_tickets WHERE ticket_id = ? AND service_date = ?'
             );
-            $current->execute([$ticketId, $today]);
+            executeQuery($current, [$ticketId, $today]);
             $existing = $current->fetch();
             $conn->rollBack();
             if (!$existing) {
@@ -950,23 +994,23 @@ $conn = null;
 
         // If recall_count has reached 3, auto-update the ticket to cancelled (Missed/Skipped).
         if ($recallAttempt >= 3) {
-            $autoSkip = $conn->prepare(
+            $autoSkip = prepareQuery($conn,
                 "UPDATE public.queue_tickets SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP
                  WHERE ticket_id = ? AND service_date = ?"
             );
-            $autoSkip->execute([$ticket['ticket_id'], $today]);
+            executeQuery($autoSkip, [$ticket['ticket_id'], $today]);
         }
 
         // SMS webhook integration point — configure SMS_WEBHOOK_URL and SMS_API_KEY env vars.
         $smsWebhookUrl = getenv('SMS_WEBHOOK_URL');
         if ($smsWebhookUrl !== false && $smsWebhookUrl !== '') {
             $studentPhone = '';
-            $phoneQuery = $conn->prepare(
+            $phoneQuery = prepareQuery($conn,
                 "SELECT to_jsonb(profile)->>'mobile_number' AS mobile_number
                  FROM public.student_profiles AS profile
                  WHERE student_number = ? LIMIT 1"
             );
-            $phoneQuery->execute([$ticket['student_id']]);
+            executeQuery($phoneQuery, [$ticket['student_id']]);
             $phoneRow = $phoneQuery->fetch();
             if ($phoneRow && !empty($phoneRow['mobile_number'])) {
                 $studentPhone = $phoneRow['mobile_number'];
@@ -995,9 +1039,9 @@ $conn = null;
 
     if ($action === 'reset_day') {
         $conn->beginTransaction();
-        $lock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
-        $lock->execute(["daily-operations:$today"]);
-        $archive = $conn->prepare(
+        $lock = prepareQuery($conn, 'SELECT pg_advisory_xact_lock(hashtext(?))');
+        executeQuery($lock, ["daily-operations:$today"]);
+        $archive = prepareQuery($conn,
             "INSERT INTO public.daily_reports
                 (report_date, total_tickets, completed_tickets, cancelled_tickets,
                  waiting_tickets, serving_tickets, regular_tickets, priority_tickets)
@@ -1012,42 +1056,16 @@ $conn = null;
              WHERE service_date = ?
              HAVING COUNT(*) > 0"
         );
-        $archive->execute([$today, $today]);
-        $delete = $conn->prepare('DELETE FROM public.queue_tickets WHERE service_date = ?');
-        $delete->execute([$today]);
+        executeQuery($archive, [$today, $today]);
+        $delete = prepareQuery($conn, 'DELETE FROM public.queue_tickets WHERE service_date = ?');
+        executeQuery($delete, [$today]);
         $conn->commit();
         respond(200, ['success' => true, 'archived_tickets' => $delete->rowCount()]);
     }
 
     respond(400, ['success' => false, 'message' => 'Unknown action']);
+} catch (PDOException $error) {
+    handleApiException($error);
 } catch (Throwable $error) {
-    if (($conn ?? null) instanceof PDO && $conn->inTransaction()) {
-        try {
-            $conn->rollBack();
-        } catch (Throwable $rollbackError) {
-            error_log(sprintf('Queue API rollback failure [%s]: %s', $requestId ?? 'unavailable', $rollbackError->getMessage()));
-        }
-    }
-    error_log(sprintf(
-        'Queue API error [%s] (%s, SQLSTATE %s): %s in %s:%d',
-        $requestId ?? 'unavailable',
-        get_class($error),
-        (string) $error->getCode(),
-        $error->getMessage(),
-        $error->getFile(),
-        $error->getLine()
-    ));
-    $sqlState = $error instanceof PDOException
-        ? (string) ($error->errorInfo[0] ?? $error->getCode())
-        : (string) $error->getCode();
-    $isConnectionFailure = $error instanceof PDOException
-        && (str_starts_with($sqlState, '08') || in_array($sqlState, ['57P01', '57P02', '57P03'], true));
-    respond($isConnectionFailure ? 503 : 500, [
-        'success' => false,
-        'code' => $isConnectionFailure ? 'DATABASE_UNAVAILABLE' : 'INTERNAL_SERVER_ERROR',
-        'request_id' => $requestId ?? null,
-        'message' => $isConnectionFailure
-            ? 'The database is temporarily unavailable. Please try again shortly.'
-            : 'The queue service encountered a server or database error. Please try again later.',
-    ]);
+    handleApiException($error);
 }

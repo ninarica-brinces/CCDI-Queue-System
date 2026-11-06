@@ -115,6 +115,23 @@
       background: rgba(255, 255, 255, 0.25);
     }
 
+    .ui-icon {
+      width: 1.15em;
+      height: 1.15em;
+      flex: 0 0 auto;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vertical-align: middle;
+    }
+
+    .restriction-banner .ui-icon {
+      margin-right: 0.25rem;
+      vertical-align: text-bottom;
+    }
+
     /* VIEWS */
     .view-section {
       display: none;
@@ -709,7 +726,8 @@
 
 <div class="nav-actions">
   <a class="btn-nav" href="index.html">
-    🏠 Home
+    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3 10 9-7 9 7"/><path d="M5 9v12h14V9M9 21v-7h6v7"/></svg>
+    Home
   </a>
 </div>
 
@@ -729,7 +747,9 @@
   <div class="portal-grid">
     <div class="portal-card" onclick="openStudentModal()" role="button" tabindex="0"
       onkeydown="if (event.key === 'Enter' || event.key === ' ') openStudentModal()">
-      <div class="portal-icon">👨‍🎓</div>
+      <div class="portal-icon" aria-hidden="true">
+        <svg class="ui-icon" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 21a7 7 0 0 1 14 0M3 5l9-3 9 3-9 3-9-3Z"/><path d="M6 6v4"/></svg>
+      </div>
       <h2>Student Portal</h2>
       <p>Continue to your student queue dashboard.</p>
       <span class="btn-portal">Sign in</span>
@@ -749,7 +769,8 @@
   <div class="panel" id="studentInfoPanel">
 
     <div class="panel-header">
-      👤 Student Information
+      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3"/><path d="M5 21a7 7 0 0 1 14 0"/></svg>
+      Student Information
     </div>
 
     <div class="panel-body">
@@ -857,7 +878,8 @@
   <div class="panel" id="paymentRequestPanel">
 
     <div class="panel-header">
-      💳 Payment Request
+      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg>
+      Payment Request
     </div>
 
     <div class="panel-body">
@@ -874,7 +896,7 @@
           class="service-card"
           onclick="selectService(this, 'Tuition Payment')"
         >
-          <div class="icon">🎓</div>
+          <div class="icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><path d="m2 9 10-5 10 5-10 5L2 9Z"/><path d="M6 11v5c3 2 9 2 12 0v-5M22 9v6"/></svg></div>
           <h4>Tuition Payment</h4>
         </div>
 
@@ -883,7 +905,7 @@
           class="service-card"
           onclick="selectService(this, 'Certificate of Enrollment')"
         >
-          <div class="icon">📄</div>
+          <div class="icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></div>
           <h4>Certificate of Enrollment</h4>
         </div>
 
@@ -892,7 +914,7 @@
           class="service-card"
           onclick="selectService(this, 'Certificate of Registration')"
         >
-          <div class="icon">📋</div>
+          <div class="icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2M9 10h6M9 14h6M9 18h4"/></svg></div>
           <h4>Certificate of Registration</h4>
         </div>
 
@@ -901,7 +923,7 @@
           class="service-card"
           onclick="selectService(this, 'Other School Documents')"
         >
-          <div class="icon">📁</div>
+          <div class="icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/><path d="M3 8V5h7l2 2"/></svg></div>
           <h4>Other School Documents</h4>
         </div>
 
@@ -910,7 +932,7 @@
           class="service-card"
           onclick="selectService(this, 'Other School Fees')"
         >
-          <div class="icon">💳</div>
+          <div class="icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg></div>
           <h4>Other School Fees</h4>
         </div>
 
@@ -1057,8 +1079,8 @@
       <!-- Active Ticket Restriction Warning -->
       <div id="restrictionBanner" class="restriction-banner">
 
-        ⚠️
-        <strong>Active Ticket Exists!</strong>
+        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg>
+        <strong>Active Ticket Exists</strong>
 
         Student ID
         <span id="restrictedIdSpan"></span>
@@ -1072,7 +1094,7 @@
 
       <!-- JOINED QUEUE MESSAGE -->
       <div id="joinedMessage" class="joined-message">
-        ✓ JOINED QUEUE
+        JOINED QUEUE
       </div>
 
 
@@ -1098,7 +1120,8 @@
       class="panel-header"
       style="background:#16a34a;"
     >
-      ✅ Your Queue Number
+      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>
+      Your Queue Number
     </div>
 
     <div class="panel-body">
@@ -1127,7 +1150,8 @@
         <div
           style="font-size: 0.82rem; font-weight:700; margin-bottom: 0.4rem; color:var(--text-dark);"
         >
-          📢 Queue Information
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 13h4l10 5V6L8 11H4z"/><path d="m8 13 2 7h4l-2-5"/></svg>
+          Queue Information
         </div>
 
 
@@ -1167,7 +1191,8 @@
         <div
           style="font-size: 0.8rem; font-weight: 700; color: var(--warning-amber); margin-bottom: 0.3rem;"
         >
-          ⚠️ Important Reminder
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg>
+          Important Reminder
         </div>
 
         <p
@@ -1187,7 +1212,8 @@
         <div
           style="font-size: 0.8rem; font-weight: 700; color: var(--primary-blue); margin-bottom: 0.3rem;"
         >
-          🛡️ Our Commitment
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></svg>
+          Our Commitment
         </div>
 
         <p
@@ -1241,7 +1267,7 @@
     >
 
       <div class="panel-header">
-        ⚡ Counter Controls
+        Counter Controls
       </div>
 
       <div class="panel-body">
@@ -1279,7 +1305,7 @@
     <div class="panel">
 
       <div class="panel-header">
-        📊 Counter Statistics
+        Counter Statistics
       </div>
 
       <div class="panel-body">
@@ -1349,7 +1375,7 @@
     >
 
       <span>
-        📋 Waiting Queue List
+        Waiting Queue List
       </span>
 
       <span
@@ -2748,7 +2774,7 @@
 
 
         btnGen.innerText =
-          "✓ JOINED QUEUE";
+          "JOINED QUEUE";
 
 
         /*

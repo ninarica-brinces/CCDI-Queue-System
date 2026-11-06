@@ -273,7 +273,7 @@ function openMonitoringTab(data, monitoringWindow) {
         </head>
         <body>
             <div class="ticket-card">
-                <span id="ticketStatus" class="status-badge">● Waiting for Counter</span>
+                <span id="ticketStatus" class="status-badge">Waiting for Counter</span>
                 <div style="color: #718096; font-size: 14px; margin-top: 5px;">Your Queue Number</div>
                 <div class="queue-number">${escapeHtml(data.queueNumber)}</div>
                 
@@ -324,9 +324,9 @@ function openMonitoringTab(data, monitoringWindow) {
                             return;
                         }
                         const labels = {
-                            waiting: '● Waiting for Counter',
-                            serving: '● NOW SERVING - Please proceed',
-                            completed: '✓ Transaction completed',
+                            waiting: 'Waiting for Counter',
+                            serving: 'Now Serving - Please proceed',
+                            completed: 'Transaction completed',
                             cancelled: 'Ticket skipped'
                         };
                         statusElement.textContent = labels[ticket.status] || 'Queue status unavailable';

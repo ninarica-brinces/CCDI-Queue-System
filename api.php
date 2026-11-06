@@ -1286,20 +1286,29 @@ $conn = null;
 
     respond(400, ['success' => false, 'message' => 'Unknown action']);
 } catch (PDOException $error) {
+    global $lastFailedQuery;
     $sqlState = (string) ($error->errorInfo[0] ?? $error->getCode());
     if (
         ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' &&
-        in_array($_GET['action'] ?? '', ['get_cashier_payment_activity_records', 'get_c_status-all'], true) &&
-        !isDevelopmentMode() &&
-        in_array($sqlState, ['42P01', '42703'], true)
+        in_array($_GET['action'] ?? '', ['get_cashier_payment_activity_records', 'get_c_status-all'], true)
     ) {
         error_log(sprintf(
-            'Queue API payment activity schema fallback [%s, SQLSTATE %s]: %s',
+            'Queue API payment activity query failure [%s, SQLSTATE %s, SQL %s]: %s',
             $requestId,
             $sqlState,
+            $lastFailedQuery['sql'] ?? 'unavailable',
             $error->getMessage()
         ));
-        respond(200, emptyPaymentActivityPayload());
+        $message = sprintf('SQLSTATE %s: %s', $sqlState, $error->getMessage());
+        if (!empty($lastFailedQuery['sql'])) {
+            $message .= ' | SQL: ' . $lastFailedQuery['sql'];
+        }
+        respond(500, [
+            'success' => false,
+            'status' => 'error',
+            'request_id' => $requestId,
+            'message' => $message,
+        ]);
     }
 
     handleApiException($error);

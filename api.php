@@ -1,6 +1,10 @@
 <?php
 ob_start();
-ini_set('display_errors', '0');
+error_reporting(E_ALL);
+$debugErrors = in_array(strtolower((string) getenv('APP_ENV')), ['development', 'local'], true)
+    || filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+ini_set('display_errors', $debugErrors ? '1' : '0');
+ini_set('display_startup_errors', $debugErrors ? '1' : '0');
 ini_set('html_errors', '0');
 ini_set('log_errors', '1');
 $responseSent = false;
@@ -165,12 +169,16 @@ function handleApiException(Throwable $error)
             ? 'The database is temporarily unavailable. Please try again shortly.'
             : 'The queue service encountered a server or database error. Please try again later.',
     ];
-    if ($error instanceof PDOException && isDevelopmentMode()) {
-        $payload['message'] = 'Database error: ' . $error->getMessage();
+    if (isDevelopmentMode()) {
+        $payload['message'] = $error instanceof PDOException
+            ? 'Database error: ' . $error->getMessage()
+            : 'Server error: ' . $error->getMessage();
         $payload['debug'] = [
+            'exception' => get_class($error),
             'sqlstate' => $sqlState,
             'sql' => $lastFailedQuery['sql'] ?? null,
-            'parameters' => $lastFailedQuery['parameters'] ?? [],
+            'file' => $error->getFile(),
+            'line' => $error->getLine(),
         ];
     }
 
@@ -365,6 +373,9 @@ $conn = null;
     }
     if (!is_string($action)) {
         respond(400, ['success' => false, 'message' => 'Invalid action']);
+    }
+    if ($method === 'GET' && $action === 'get_c_status-all') {
+        $action = 'get_cashier_payment_activity_records';
     }
 
     $routes = [
@@ -1260,7 +1271,7 @@ $conn = null;
     $sqlState = (string) ($error->errorInfo[0] ?? $error->getCode());
     if (
         ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' &&
-        ($_GET['action'] ?? '') === 'get_cashier_payment_activity_records' &&
+        in_array($_GET['action'] ?? '', ['get_cashier_payment_activity_records', 'get_c_status-all'], true) &&
         in_array($sqlState, ['42P01', '42703'], true)
     ) {
         error_log(sprintf(

@@ -207,6 +207,7 @@ function emptyPaymentActivityPayload($pageSize = 50)
     return [
         'configured' => true,
         'success' => true,
+        'status' => 'success',
         'data' => [],
         'total_records' => 0,
         'today_records' => 0,
@@ -602,7 +603,9 @@ $conn = null;
                     static fn($key) => "NULLIF(to_jsonb(payment_record)->>'$key', '')",
                     $keys
                 );
-                return 'COALESCE(' . implode(', ', $expressions) . ')';
+                return count($expressions) === 1
+                    ? $expressions[0]
+                    : 'COALESCE(' . implode(', ', $expressions) . ')';
             };
             $courseYear = $jsonValue(['course_year']);
             $courseAndYear = "NULLIF(concat_ws(' / ', " .
@@ -768,6 +771,7 @@ $conn = null;
         respond(200, [
             'configured' => true,
             'success' => true,
+            'status' => 'success',
             'data' => $records,
             'total_records' => (int) $metrics['total_records'],
             'today_records' => (int) $metrics['today_records'],

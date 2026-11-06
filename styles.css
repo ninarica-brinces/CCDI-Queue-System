@@ -1356,3 +1356,314 @@ td {
     font-size: 1rem;
   }
 }
+
+/* Dark slate theme for the student and cashier portals. */
+.portal-page,
+body.cashier-page.cashier-page {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%) !important;
+  color: #FFFFFF !important;
+}
+
+.portal-page header,
+body.cashier-page.cashier-page > header,
+.cashier-page aside,
+.cashier-page .footer-bar {
+  border-color: rgba(255, 255, 255, .15) !important;
+  background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%) !important;
+  color: #FFFFFF !important;
+}
+
+.portal-page .brand-text h1,
+.portal-page .brand-text p,
+.portal-page .hero-title,
+.portal-page .portal-card h2,
+.portal-page .panel-header,
+.portal-page .form-group label,
+.portal-page .step-title,
+.portal-page .radio-label,
+.portal-page .ticket-badge .number,
+.portal-page .info-row,
+.portal-page .modal-box h3,
+.portal-page .modal-box label,
+.cashier-page .brand-title,
+.cashier-page .header-title,
+.cashier-page .card-title,
+.cashier-page .form-group label,
+.cashier-page.cashier-page .brand-text h1,
+.cashier-page.cashier-page .brand-text p,
+.cashier-page.cashier-login-header h2,
+.cashier-page.cashier-login-card h2 {
+  color: #FFFFFF !important;
+}
+
+.portal-page .hero-subtitle,
+.portal-page .portal-card p,
+.portal-page .modal-box p,
+.portal-page .info-row span:first-child,
+.portal-page .step-box,
+.portal-page .joined-message,
+.cashier-page .sidebar-footer,
+.cashier-page .kpi-details .title,
+.cashier-page .kpi-details .sub,
+.cashier-page .details-label,
+.cashier-page .empty-msg,
+.cashier-page .payment-search-label,
+.cashier-page .payment-filter-label,
+.cashier-page .payment-activity-record-message,
+.cashier-page .payment-activity-record-pagination,
+.cashier-page .cashier-login-card > p,
+.cashier-page .muted,
+.portal-page p:not(.restriction-banner),
+.cashier-page p:not(.login-message),
+.cashier-page .cashier-login-cancel {
+  color: #94A3B8 !important;
+}
+
+.portal-page .portal-card,
+.portal-page .panel,
+.portal-page .modal-box,
+.portal-page .info-card,
+.portal-page .service-card,
+.portal-page .step-box,
+.portal-page .ticket-badge,
+.portal-page .cashier-layout .panel,
+.cashier-page .card,
+.cashier-page .kpi-card,
+.cashier-page .details-list,
+.cashier-page #ticketDialog,
+.cashier-page .cashier-login-card {
+  border: 1px solid rgba(255, 255, 255, .15) !important;
+  background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, .4) !important;
+}
+
+.portal-page .portal-card:hover,
+.portal-page .panel:hover,
+.portal-page .service-card:hover,
+.cashier-page .card:hover,
+.cashier-page .kpi-card:hover,
+.cashier-page .cashier-login-card:hover {
+  border-color: rgba(255, 255, 255, .28) !important;
+  box-shadow: 0 22px 44px rgba(0, 0, 0, .45) !important;
+}
+
+.portal-page .portal-icon,
+.portal-page .step-box,
+.portal-page .step-badge,
+.portal-page .service-card,
+.portal-page .service-card.selected,
+.cashier-page .kpi-icon {
+  background: rgba(59, 130, 246, .18) !important;
+  color: #BFDBFE !important;
+}
+
+.portal-page .panel-header,
+.cashier-page .card-header,
+.cashier-page .modal-header {
+  justify-content: center;
+  border-color: rgba(255, 255, 255, .15) !important;
+  background: rgba(255, 255, 255, .06) !important;
+  text-align: center;
+}
+
+.portal-page h1,
+.portal-page h2,
+.portal-page h3,
+.portal-page .modal-box h3,
+.cashier-page h1,
+.cashier-page h2,
+.cashier-page h3,
+.cashier-page .modal-header h2,
+.cashier-page .modal-header h3 {
+  color: #FFFFFF !important;
+  text-align: center;
+}
+
+.portal-page .form-group label,
+.portal-page .radio-label,
+.cashier-page .form-group label,
+.cashier-page .payment-search-label,
+.cashier-page .payment-filter-label {
+  text-align: center;
+}
+
+.portal-page .form-group label,
+.cashier-page .form-group label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cashier-page.cashier-page .cashier-login-form .form-group label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF !important;
+}
+
+.portal-page .form-control,
+.portal-page .form-group input:not([type="radio"]):not([type="checkbox"]),
+.portal-page .form-group select,
+.portal-page .form-group textarea,
+.cashier-page .form-group input:not([type="radio"]):not([type="checkbox"]),
+.cashier-page .form-group select,
+.cashier-page .form-group textarea,
+.cashier-page .search-input,
+.cashier-page .filter-select {
+  border: 1px solid rgba(148, 163, 184, .55) !important;
+  background: rgba(15, 23, 42, .78) !important;
+  color: #FFFFFF !important;
+  text-align: center;
+}
+
+.portal-page .form-control::placeholder,
+.portal-page input::placeholder,
+.portal-page textarea::placeholder,
+.cashier-page input::placeholder,
+.cashier-page textarea::placeholder {
+  color: #94A3B8 !important;
+  opacity: 1;
+}
+
+.portal-page .form-control:focus,
+.portal-page .form-group input:focus,
+.portal-page .form-group select:focus,
+.portal-page .form-group textarea:focus,
+.cashier-page .form-group input:focus,
+.cashier-page .form-group select:focus,
+.cashier-page .form-group textarea:focus,
+.cashier-page .search-input:focus,
+.cashier-page .filter-select:focus {
+  border-color: #60A5FA !important;
+  outline-color: #60A5FA !important;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, .4) !important;
+}
+
+.portal-page .modal-overlay {
+  background: rgba(2, 6, 23, .72) !important;
+}
+
+.cashier-page #cashierLoginDialog::backdrop,
+.cashier-page #ticketDialog::backdrop {
+  background: rgba(2, 6, 23, .72) !important;
+  backdrop-filter: blur(4px);
+}
+
+.cashier-page.cashier-page #cashierLoginDialog::backdrop {
+  background: rgba(2, 6, 23, .72) !important;
+}
+
+.cashier-page.cashier-page #cashierLoginDialog.cashier-login-dialog {
+  width: min(950px, calc(100vw - 32px));
+  max-width: none;
+  padding: 0;
+  border: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.cashier-page .nav-link:hover,
+.cashier-page .nav-link.active {
+  border-left-color: #60A5FA;
+  background: rgba(59, 130, 246, .16);
+  color: #FFFFFF !important;
+}
+
+.portal-page .modal-box,
+.cashier-page .modal-content,
+.cashier-page .cashier-login-card {
+  text-align: center;
+}
+
+.portal-page .modal-box .form-control,
+.portal-page .modal-box .form-group input,
+.cashier-page .cashier-login-form .form-group input,
+.cashier-page .cashier-login-form .form-group label {
+  border-radius: 0;
+  text-align: center;
+}
+
+.portal-page .btn-submit,
+.portal-page .btn-portal,
+.cashier-page .btn-primary,
+.cashier-page .btn-submit,
+.cashier-page .btn-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: #3B82F6 !important;
+  background: #2563EB !important;
+  color: #FFFFFF !important;
+  text-align: center;
+}
+
+.cashier-page .btn-secondary {
+  border-color: rgba(148, 163, 184, .45);
+  background: rgba(255, 255, 255, .08);
+  color: #E2E8F0;
+}
+
+.cashier-page .btn-text-danger {
+  border-color: #F87171;
+  background: rgba(248, 113, 113, .1);
+  color: #FCA5A5;
+}
+
+.portal-page .btn-submit:hover:not(:disabled),
+.portal-page .btn-portal:hover,
+.cashier-page .btn-primary:hover:not(:disabled),
+.cashier-page .btn-submit:hover:not(:disabled),
+.cashier-page .btn-nav:hover {
+  border-color: #60A5FA !important;
+  background: #1D4ED8 !important;
+}
+
+.portal-page .btn-submit:active:not(:disabled),
+.portal-page .btn-portal:active,
+.cashier-page .btn:active:not(:disabled),
+.cashier-page .btn-submit:active:not(:disabled),
+.cashier-page .btn-nav:active {
+  transform: scale(.98);
+}
+
+.portal-page .modal-box button[onclick*="closeModal"],
+.cashier-page .cashier-login-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94A3B8 !important;
+  text-align: center;
+}
+
+.portal-page table,
+.portal-page th,
+.portal-page td,
+.cashier-page table,
+.cashier-page th,
+.cashier-page td {
+  border-color: rgba(148, 163, 184, .22) !important;
+}
+
+.portal-page table,
+.cashier-page table {
+  background: transparent !important;
+  color: #FFFFFF !important;
+}
+
+.portal-page th,
+.cashier-page th {
+  background: rgba(255, 255, 255, .08) !important;
+  color: #FFFFFF !important;
+  text-align: center;
+}
+
+.portal-page td,
+.cashier-page td {
+  color: #E2E8F0 !important;
+}
+
+.portal-page tbody tr:hover,
+.cashier-page tbody tr:hover {
+  background: rgba(59, 130, 246, .14) !important;
+}

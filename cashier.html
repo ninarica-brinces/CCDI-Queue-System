@@ -18,6 +18,30 @@
       background-attachment: fixed;
     }
 
+    body.cashier-page #pagePaymentActivityRecord,
+    body.cashier-page #pagePaymentActivityRecord > .container {
+      background: transparent !important;
+    }
+
+    body.cashier-page #pagePaymentActivityRecord .payment-activity-card > .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    body.cashier-page #pagePaymentActivityRecord .payment-activity-card > .card-header > div {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    body.cashier-page #paymentActivitySummary {
+      flex: 0 0 auto;
+      margin-left: auto;
+      text-align: right;
+      white-space: nowrap;
+    }
+
     .cashier-login-dialog {
       width: min(950px, calc(100vw - 32px));
       max-width: none;
@@ -322,6 +346,15 @@
 
       .cashier-login-card {
         padding: 1.8rem 1.25rem;
+      }
+
+      body.cashier-page #pagePaymentActivityRecord .payment-activity-card > .card-header {
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      body.cashier-page #paymentActivitySummary {
+        font-size: 15px;
       }
     }
   </style>

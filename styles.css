@@ -1667,3 +1667,92 @@ body.cashier-page.cashier-page > header,
 .cashier-page tbody tr:hover {
   background: rgba(59, 130, 246, .14) !important;
 }
+
+/* Keep text consistently readable against the dark institutional theme. */
+html body *:not(svg):not(path) {
+  color: #FFFFFF !important;
+}
+
+html body h1,
+html body h2,
+html body h3,
+html body h4,
+html body h5,
+html body h6,
+html body label,
+html body th,
+html body .header-title,
+html body .card-title,
+html body .brand-title,
+html body .kpi-details .title,
+html body .kpi-details .value,
+html body .stat-label,
+html body .stat-value,
+html body .serving-number,
+html body .ticket-badge .number,
+html body .details-value {
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+}
+
+html body input::placeholder,
+html body textarea::placeholder {
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+}
+
+html body input:not([type="radio"]):not([type="checkbox"]),
+html body select,
+html body textarea {
+  border-color: rgba(255, 255, 255, .35) !important;
+  background-color: #1E293B !important;
+  color: #FFFFFF !important;
+}
+
+html body .ticket-badge,
+html body .info-card,
+html body .step-box,
+html body .restriction-banner,
+html body .joined-message,
+html body .tag-regular,
+html body .tag-pwd,
+html body .tag-parent,
+html body .status-next,
+html body .status-waiting,
+html body .status-completed,
+html body .status-skipped,
+html body .badge-status {
+  border-color: rgba(255, 255, 255, .2) !important;
+  background: #1E293B !important;
+  color: #FFFFFF !important;
+}
+
+html body .restriction-banner {
+  border-color: rgba(248, 113, 113, .55) !important;
+  background: #3B1D2A !important;
+}
+
+html body .joined-message,
+html body .status-completed {
+  background: #123524 !important;
+}
+
+html body .status-next {
+  background: #12345A !important;
+}
+
+html body .status-skipped {
+  background: #3B1D2A !important;
+}
+
+html body .btn-secondary {
+  border-color: rgba(255, 255, 255, .35) !important;
+  background: #334155 !important;
+  color: #FFFFFF !important;
+}
+
+html body .btn-text-danger {
+  border-color: #F87171 !important;
+  background: #3B1D2A !important;
+  color: #FFFFFF !important;
+}

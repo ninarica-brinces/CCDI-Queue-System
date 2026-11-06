@@ -11,12 +11,14 @@
     body.cashier-page {
       display: flex;
       flex-direction: column;
+      height: 100vh;
+      min-height: 100vh;
       overflow: hidden;
     }
 
     .cashier-layout {
       display: flex;
-      flex: 1;
+      flex: 1 1 auto;
       min-height: 0;
       width: 100%;
       overflow: hidden;
@@ -122,15 +124,21 @@
     @media (max-width: 760px) {
       body.cashier-page {
         display: flex;
+        height: auto;
+        min-height: 100vh;
+        overflow: auto;
       }
 
       .cashier-layout {
         display: block;
-        overflow: auto;
+        overflow: visible;
       }
 
       .cashier-layout > main {
+        width: 100%;
         height: auto;
+        min-height: 0;
+        overflow: visible;
       }
 
       body.cashier-page > header {
@@ -250,7 +258,7 @@
             <div class="kpi-details">
               <span class="title">Total Waiting</span>
               <span class="value" id="kpiWaiting">0</span>
-              <span class="sub"><span id="kpiRegWait">0</span> Regular â€¢ <span id="kpiPrioWait">0</span> Priority</span>
+              <span class="sub"><span id="kpiRegWait">0</span> Regular | <span id="kpiPrioWait">0</span> Priority</span>
             </div>
           </div>
 
@@ -506,7 +514,7 @@
     </div>
 
     <footer class="footer-bar">
-      <span>School Cashier Queue System â€¢ Enterprise Operations Mode</span>
+      <span>School Cashier Queue System | Enterprise Operations Mode</span>
       <span id="storageStatus" class="storage-status" role="status">Connecting to PostgreSQL</span>
       <button id="resetSystemBtn" type="button" class="btn-text-danger">Reset Operational Day</button>
     </footer>

@@ -32,6 +32,16 @@ function createSafeElement(tag, className, textContent = '') {
   return el;
 }
 
+function getEnglishMessage(message, fallback = '') {
+  const text = String(message || '').trim();
+  const translations = {
+    'Mangyaring ilagay ang Username at Password.': 'Please enter your username and password.',
+    'Mali ang Username o Password.': 'The username or password is incorrect.',
+    'Matagumpay na nakapag-log in!': 'Sign-in successful.'
+  };
+  return translations[text] || text || fallback;
+}
+
 function formatPaymentDetails(ticket) {
   if (ticket.service !== 'Tuition Payment') {
     return '';
@@ -313,7 +323,8 @@ async function fetchPaymentActivityRecords() {
   } catch (error) {
     if (requestId !== paymentActivityRecordRequestId) return;
     console.error('Failed to load payment activity records:', error);
-    elements.paymentActivityRecordMessage.textContent = error.message || 'Unable to load payment activity records.';
+    elements.paymentActivityRecordMessage.textContent =
+      getEnglishMessage(error.message, 'Unable to load payment activity records.');
     renderPaymentActivityRecordRows([]);
     elements.txTableBody.firstElementChild.firstElementChild.textContent =
       'Payment Activity Record is unavailable. Check the database migration and try again.';
@@ -395,7 +406,8 @@ function bindEvents() {
       elements.cashierLoginForm.reset();
       await startCashierSession(result.csrf_token);
     } catch (error) {
-      elements.cashierLoginMessage.textContent = error.message || 'Cashier sign-in failed.';
+      elements.cashierLoginMessage.textContent =
+        getEnglishMessage(error.message, 'Cashier sign-in failed.');
     } finally {
       submitButton.disabled = false;
     }
@@ -415,7 +427,7 @@ function bindEvents() {
       }
       window.location.replace('student.html');
     } catch (error) {
-      alert(error.message || 'Unable to sign out.');
+      alert(getEnglishMessage(error.message, 'Unable to sign out.'));
     }
   });
 
@@ -498,8 +510,7 @@ function bindEvents() {
       const res = await queueManager.recallCurrent('Regular');
       if (res) {
         const attempt = res.data?.recall_count || (active.recallCount + 1);
-        const msg = res.notification || `Paki-check ang queue: Ikaw ay tinatawag na sa Cashier (Attempt ${attempt}/3). Bumalik na sa pila.`;
-        alert(`📱 ${msg}\nTicket: ${active.id}`);
+        alert(`Your ticket is being called at the cashier. Please return to the queue (attempt ${attempt} of 3).\nTicket: ${active.id}`);
       }
     }
   });
@@ -516,8 +527,7 @@ function bindEvents() {
       const res = await queueManager.recallCurrent('Priority');
       if (res) {
         const attempt = res.data?.recall_count || (active.recallCount + 1);
-        const msg = res.notification || `Paki-check ang queue: Ikaw ay tinatawag na sa Cashier (Attempt ${attempt}/3). Bumalik na sa pila.`;
-        alert(`📱 ${msg}\nTicket: ${active.id}`);
+        alert(`Your ticket is being called at the cashier. Please return to the queue (attempt ${attempt} of 3).\nTicket: ${active.id}`);
       }
     }
   });
@@ -531,7 +541,7 @@ function bindEvents() {
       await fetchPaymentActivityRecords();
       alert('Operational day reset. The daily report was archived successfully.');
     } catch (error) {
-      alert(error.message);
+      alert(getEnglishMessage(error.message, 'Unable to reset the operational day.'));
     }
   });
 }
@@ -653,7 +663,8 @@ async function restoreCashierSession() {
     elements.cashierLoginDialog.showModal();
   } catch (error) {
     document.body.classList.remove('auth-locked');
-    elements.cashierLoginMessage.textContent = error.message || 'Unable to verify cashier session.';
+    elements.cashierLoginMessage.textContent =
+      getEnglishMessage(error.message, 'Unable to verify cashier session.');
     elements.cashierLoginDialog.showModal();
   }
 }

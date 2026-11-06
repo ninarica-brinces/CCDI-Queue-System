@@ -1,5 +1,15 @@
 let selectedServiceText = "Tuition Payment";
 
+function getEnglishMessage(message, fallback = '') {
+    const text = String(message || '').trim();
+    const translations = {
+        'Mangyaring ilagay ang Username at Password.': 'Please enter your username and password.',
+        'Mali ang Username o Password.': 'The username or password is incorrect.',
+        'Matagumpay na nakapag-log in!': 'Sign-in successful.'
+    };
+    return translations[text] || text || fallback;
+}
+
 // Event listener initialization once the DOM fully loads
 document.addEventListener("DOMContentLoaded", () => {
     // Service selector handling
@@ -168,7 +178,7 @@ async function joinQueue() {
     } catch (error) {
         if (monitorWindow) monitorWindow.close();
         console.error("Failed to create queue ticket:", error);
-        alert(error.message || "Unable to join the queue. Please try again.");
+        alert(getEnglishMessage(error.message, "Unable to join the queue. Please try again."));
         if (joinButton) joinButton.disabled = false;
     }
 }
@@ -306,7 +316,7 @@ function openMonitoringTab(data, monitoringWindow) {
                         const response = await fetch(apiUrl + '?action=get_state', { cache: 'no-store' });
                         const result = await response.json();
                         if (!response.ok || !result.success || !Array.isArray(result.data)) {
-                            throw new Error(result.message || 'Queue status unavailable');
+                            throw new Error(getEnglishMessage(result.message, 'Queue status is unavailable.'));
                         }
                         const ticket = result.data.find(item => Number(item.ticket_id) === ticketId);
                         if (!ticket) {

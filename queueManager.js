@@ -9,6 +9,16 @@ const EMPTY_STATE = {
   counters: { regSequence: 0, prioSequence: 0, completed: 0, skipped: 0 }
 };
 
+function getEnglishMessage(message, fallback = '') {
+  const text = String(message || '').trim();
+  const translations = {
+    'Mangyaring ilagay ang Username at Password.': 'Please enter your username and password.',
+    'Mali ang Username o Password.': 'The username or password is incorrect.',
+    'Matagumpay na nakapag-log in!': 'Sign-in successful.'
+  };
+  return translations[text] || text || fallback;
+}
+
 async function readApiResponse(response) {
   let result;
   try {
@@ -212,7 +222,7 @@ export class QueueManager {
       return result;
     } catch (error) {
       console.error('Error creating ticket:', error);
-      alert(error.message || 'Failed to create ticket');
+      alert(getEnglishMessage(error.message, 'Unable to create the ticket.'));
       return false;
     }
   }
@@ -237,7 +247,7 @@ export class QueueManager {
       return true;
     } catch (error) {
       console.error('Failed to call next ticket:', error);
-      alert(error.message || 'Failed to call next ticket');
+      alert(getEnglishMessage(error.message, 'Unable to call the next ticket.'));
       await this.fetchState().catch(() => undefined);
       return false;
     }
@@ -276,7 +286,7 @@ export class QueueManager {
       return true;
     } catch (error) {
       console.error('Failed to recall ticket:', error);
-      alert(error.message || 'Failed to recall ticket');
+      alert(getEnglishMessage(error.message, 'Unable to recall the ticket.'));
       await this.fetchState().catch(() => undefined);
       return false;
     }
@@ -294,7 +304,7 @@ export class QueueManager {
       await this.fetchState().catch(() => undefined);
     } catch (error) {
       console.error('Failed to update ticket status:', error);
-      alert(error.message || 'Failed to update ticket status');
+      alert(getEnglishMessage(error.message, 'Unable to update the ticket status.'));
     }
   }
 
@@ -339,7 +349,7 @@ export class QueueManager {
       await this.fetchState().catch(() => undefined);
     } catch (error) {
       console.error('Failed to reset day:', error);
-      throw error;
+      throw new Error(getEnglishMessage(error.message, 'Unable to reset the operational day.'));
     }
   }
 }

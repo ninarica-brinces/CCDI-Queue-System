@@ -8,6 +8,23 @@ let paymentActivityRecordRequestId = 0;
 let paymentActivityRecordSearchTimer;
 let paymentActivityRecordRefreshTimer;
 
+async function readApiResponse(response) {
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    const error = new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    const error = new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
+  return result;
+}
+
 function createSafeElement(tag, className, textContent = '') {
   const el = document.createElement(tag);
   if (className) el.className = className;
@@ -226,17 +243,17 @@ function renderPaymentActivityRecordRows(records) {
 
   records.forEach(record => {
     const row = createSafeElement('tr');
-    const courseYear = [record.course, record.year_level].filter(Boolean).join(' / ') || '—';
+    const courseYear = record.course_year || '—';
     const createdAt = new Date(record.created_at);
     const formattedDate = Number.isNaN(createdAt.getTime())
       ? record.created_at
       : createdAt.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
     const fields = [
-      record.reference_number,
+      record.transaction_ref,
       record.student_id,
       record.student_name,
       courseYear,
-      record.payment_description,
+      record.payment_type,
       formattedDate,
       record.cashier_staff
     ];
@@ -270,7 +287,7 @@ async function fetchPaymentActivityRecords() {
       credentials: 'same-origin',
       cache: 'no-store'
     });
-    const result = await response.json();
+    const result = await readApiResponse(response);
     if (!response.ok || !result.success || !Array.isArray(result.data)) {
       throw new Error(result.message || 'Unable to load payment activity records.');
     }
@@ -371,7 +388,7 @@ function bindEvents() {
           password: elements.cashierLoginPassword.value
         })
       });
-      const result = await response.json();
+      const result = await readApiResponse(response);
       if (!response.ok || !result.success || !result.csrf_token) {
         throw new Error(result.message || 'Cashier sign-in failed.');
       }
@@ -392,7 +409,7 @@ function bindEvents() {
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': queueManager.csrfToken },
         body: JSON.stringify({ action: 'logout' })
       });
-      const result = await response.json();
+      const result = await readApiResponse(response);
       if (!response.ok || !result.success) {
         throw new Error(result.message || 'Unable to sign out.');
       }
@@ -624,7 +641,7 @@ async function restoreCashierSession() {
       credentials: 'same-origin',
       cache: 'no-store'
     });
-    const result = await response.json();
+    const result = await readApiResponse(response);
     if (!response.ok || !result.success) {
       throw new Error(result.message || 'Unable to verify cashier session.');
     }

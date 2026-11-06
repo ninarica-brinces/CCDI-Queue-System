@@ -224,13 +224,24 @@ $conn = null;
         if ($contentLength > 16384) {
             respond(413, ['success' => false, 'message' => 'Request body is too large']);
         }
-        $input = json_decode(file_get_contents('php://input'), true);
-        if (!is_array($input)) {
+        $requestBody = file_get_contents('php://input');
+        if ($requestBody === false || trim($requestBody) === '') {
             respond(400, ['success' => false, 'message' => 'Request body must be valid JSON']);
+        }
+        try {
+            $input = json_decode($requestBody, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $error) {
+            respond(400, ['success' => false, 'message' => 'Request body must be valid JSON']);
+        }
+        if (!is_array($input)) {
+            respond(400, ['success' => false, 'message' => 'Request body must be a JSON object']);
         }
         $action = $input['action'] ?? '';
     } elseif ($method !== 'GET') {
         respond(405, ['success' => false, 'message' => 'Method not allowed']);
+    }
+    if (!is_string($action)) {
+        respond(400, ['success' => false, 'message' => 'Invalid action']);
     }
 
     $routes = [
@@ -260,7 +271,21 @@ $conn = null;
         !in_array($action, ['logout', 'auth_status'], true) ||
         ($action === 'auth_status' && ($_SESSION['role'] ?? '') === 'student')
     ) {
-        require_once __DIR__ . '/db.php';
+        try {
+            require_once __DIR__ . '/db.php';
+        } catch (PDOException $error) {
+            error_log(sprintf(
+                'Queue API database connection failure [%s]: %s',
+                $requestId,
+                $error->getMessage()
+            ));
+            respond(503, [
+                'success' => false,
+                'code' => 'DATABASE_UNAVAILABLE',
+                'request_id' => $requestId,
+                'message' => 'The database is temporarily unavailable. Please try again shortly.',
+            ]);
+        }
     }
 
     if ($method === 'POST' && $action === 'cashier_login') {
@@ -456,8 +481,9 @@ $conn = null;
             ]);
         }
         $activities = $conn->prepare(
-            'SELECT reference_number, payment_description, created_at
-             FROM public.payment_activity_records WHERE student_id = ?
+            'SELECT transaction_ref AS reference_number,
+                    payment_type AS payment_description, created_at
+             FROM public.payment_histories WHERE student_id = ?
              ORDER BY created_at DESC LIMIT 50'
         );
         $activities->execute([$studentId]);
@@ -512,13 +538,12 @@ $conn = null;
         $where = [];
         $parameters = [];
         if ($search !== '') {
-            $where[] = "(reference_number ILIKE ? OR student_id ILIKE ? OR student_name ILIKE ?
-                         OR COALESCE(course, '') ILIKE ? OR COALESCE(year_level, '') ILIKE ?
-                         OR payment_description ILIKE ? OR cashier_staff ILIKE ?)";
+            $where[] = "(transaction_ref ILIKE ? OR student_id ILIKE ? OR student_name ILIKE ?
+                         OR COALESCE(course_year, '') ILIKE ? OR payment_type ILIKE ?
+                         OR cashier_staff ILIKE ?)";
             $searchPattern = '%' . $search . '%';
             array_push(
                 $parameters,
-                $searchPattern,
                 $searchPattern,
                 $searchPattern,
                 $searchPattern,
@@ -538,7 +563,7 @@ $conn = null;
         }
         $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
 
-        $countQuery = $conn->prepare('SELECT COUNT(*) FROM public.payment_activity_records' . $whereSql);
+        $countQuery = $conn->prepare('SELECT COUNT(*) FROM public.payment_histories' . $whereSql);
         $countQuery->execute($parameters);
         $filteredCount = (int) $countQuery->fetchColumn();
 
@@ -549,10 +574,10 @@ $conn = null;
         }
         $page = min($page, max(1, (int) ceil($filteredCount / $pageSize)));
         $recordQuery = $conn->prepare(
-            'SELECT reference_number, student_id, student_name, course, year_level,
-                    payment_description, created_at, cashier_staff, status
-             FROM public.payment_activity_records' . $whereSql .
-            ' ORDER BY created_at DESC, reference_number DESC' .
+            'SELECT transaction_ref, student_id, student_name, course_year,
+                    payment_type, created_at, cashier_staff, status
+             FROM public.payment_histories' . $whereSql .
+            ' ORDER BY created_at DESC, transaction_ref DESC' .
             ' LIMIT ' . $pageSize . ' OFFSET ' . (($page - 1) * $pageSize)
         );
         $recordQuery->execute($parameters);
@@ -561,7 +586,7 @@ $conn = null;
         $metricsQuery = $conn->prepare(
             "SELECT COUNT(*) AS total_records,
                     COUNT(*) FILTER (WHERE created_at >= ? AND created_at < ?) AS today_records
-             FROM public.payment_activity_records"
+             FROM public.payment_histories"
         );
         $metricsQuery->execute([
             $localToday->format('Y-m-d\TH:i:sP'),
@@ -578,7 +603,7 @@ $conn = null;
         $activityQuery = $conn->prepare(
             "SELECT (created_at AT TIME ZONE ?)::date AS activity_date,
                     COUNT(*) AS records
-             FROM public.payment_activity_records
+             FROM public.payment_histories
              WHERE created_at >= ? AND created_at < ?
              GROUP BY (created_at AT TIME ZONE ?)::date
              ORDER BY activity_date"
@@ -848,18 +873,23 @@ $conn = null;
 
         if ($status === 'completed' && $ticket['transaction_type'] === 'Tuition Payment') {
             $paymentActivityRecord = $conn->prepare(
-                "INSERT INTO public.payment_activity_records
-                    (reference_number, student_id, student_name, course, year_level,
-                     payment_description, cashier_staff, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 'recorded')"
+                "INSERT INTO public.payment_histories
+                    (transaction_ref, student_id, student_name, course_year,
+                     payment_type, cashier_staff, status)
+                 VALUES (?, ?, ?, ?, ?, ?, 'recorded')"
             );
             $paymentActivityRecord->execute([
-                $ticket['ticket_number'],
+                $ticket['ticket_number'] . '-' . $ticket['ticket_id'],
                 $ticket['student_id'],
                 $ticket['student_name'],
-                $ticket['course'],
-                $ticket['year_level'],
-                $ticket['payment_description'] . ($ticket['payment_period'] ? ' / ' . $ticket['payment_period'] : ''),
+                implode(' / ', array_filter([
+                    trim((string) ($ticket['course'] ?? '')),
+                    trim((string) ($ticket['year_level'] ?? '')),
+                ], static fn($value) => $value !== '')),
+                implode(' / ', array_filter([
+                    trim((string) ($ticket['payment_description'] ?? '')),
+                    trim((string) ($ticket['payment_period'] ?? '')),
+                ], static fn($value) => $value !== '')),
                 (string) ($_SESSION['identity']['staff_id'] ?? 'Cashier'),
             ]);
         }
@@ -932,7 +962,9 @@ $conn = null;
         if ($smsWebhookUrl !== false && $smsWebhookUrl !== '') {
             $studentPhone = '';
             $phoneQuery = $conn->prepare(
-                'SELECT mobile_number FROM public.student_profiles WHERE student_number = ? LIMIT 1'
+                "SELECT to_jsonb(profile)->>'mobile_number' AS mobile_number
+                 FROM public.student_profiles AS profile
+                 WHERE student_number = ? LIMIT 1"
             );
             $phoneQuery->execute([$ticket['student_id']]);
             $phoneRow = $phoneQuery->fetch();
@@ -1005,8 +1037,17 @@ $conn = null;
         $error->getFile(),
         $error->getLine()
     ));
-    respond(500, [
+    $sqlState = $error instanceof PDOException
+        ? (string) ($error->errorInfo[0] ?? $error->getCode())
+        : (string) $error->getCode();
+    $isConnectionFailure = $error instanceof PDOException
+        && (str_starts_with($sqlState, '08') || in_array($sqlState, ['57P01', '57P02', '57P03'], true));
+    respond($isConnectionFailure ? 503 : 500, [
         'success' => false,
-        'message' => 'The queue service encountered a server or database error. Please try again later.',
+        'code' => $isConnectionFailure ? 'DATABASE_UNAVAILABLE' : 'INTERNAL_SERVER_ERROR',
+        'request_id' => $requestId ?? null,
+        'message' => $isConnectionFailure
+            ? 'The database is temporarily unavailable. Please try again shortly.'
+            : 'The queue service encountered a server or database error. Please try again later.',
     ]);
 }

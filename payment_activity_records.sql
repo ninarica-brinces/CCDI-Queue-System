@@ -35,156 +35,142 @@ BEGIN
 END
 $$;
 
-CREATE TABLE IF NOT EXISTS public.payment_activity_records (
-    reference_number TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS public.payment_histories (
+    transaction_ref TEXT PRIMARY KEY,
     student_id TEXT NOT NULL,
     student_name TEXT NOT NULL,
-    course TEXT,
-    year_level TEXT,
-    payment_description TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    course_year TEXT,
+    payment_type TEXT NOT NULL,
     cashier_staff TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'recorded'
+    status TEXT NOT NULL DEFAULT 'recorded',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-ALTER TABLE public.payment_activity_records
-    ADD COLUMN IF NOT EXISTS student_name TEXT;
-ALTER TABLE public.payment_activity_records
-    ADD COLUMN IF NOT EXISTS course TEXT;
-ALTER TABLE public.payment_activity_records
-    ADD COLUMN IF NOT EXISTS year_level TEXT;
-ALTER TABLE public.payment_activity_records
-    ADD COLUMN IF NOT EXISTS payment_description TEXT;
-ALTER TABLE public.payment_activity_records
-    ADD COLUMN IF NOT EXISTS cashier_staff TEXT;
-ALTER TABLE public.payment_activity_records
-    ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'recorded';
+ALTER TABLE public.payment_histories
+    ADD COLUMN IF NOT EXISTS transaction_ref TEXT,
+    ADD COLUMN IF NOT EXISTS student_id TEXT,
+    ADD COLUMN IF NOT EXISTS student_name TEXT,
+    ADD COLUMN IF NOT EXISTS course_year TEXT,
+    ADD COLUMN IF NOT EXISTS payment_type TEXT,
+    ADD COLUMN IF NOT EXISTS cashier_staff TEXT,
+    ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'recorded',
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
 
-UPDATE public.payment_activity_records AS activity
-SET student_name = COALESCE(NULLIF(activity.student_name, ''), ticket.student_name),
-    course = COALESCE(activity.course, ticket.course),
-    year_level = COALESCE(activity.year_level, ticket.year_level::text),
-    payment_description = COALESCE(
-        NULLIF(btrim(activity.payment_description), ''),
-        NULLIF(
-            concat_ws(
-                ' / ',
-                NULLIF(btrim(ticket.payment_description), ''),
-                NULLIF(btrim(ticket.payment_period), '')
-            ),
-            ''
-        ),
-        'Payment activity'
-    ),
-    cashier_staff = COALESCE(NULLIF(activity.cashier_staff, ''), 'Historical import'),
-    status = 'recorded'
-FROM public.queue_tickets AS ticket
-WHERE ticket.ticket_number = activity.reference_number;
-
-UPDATE public.payment_activity_records
-SET student_name = COALESCE(student_name, ''),
-    payment_description = COALESCE(NULLIF(btrim(payment_description), ''), 'Payment activity'),
-    cashier_staff = COALESCE(NULLIF(cashier_staff, ''), 'Historical import'),
-    status = 'recorded';
-
-ALTER TABLE public.payment_activity_records
-    ALTER COLUMN student_name SET NOT NULL;
-ALTER TABLE public.payment_activity_records
-    ALTER COLUMN payment_description SET NOT NULL;
-ALTER TABLE public.payment_activity_records
-    ALTER COLUMN cashier_staff SET NOT NULL;
-ALTER TABLE public.payment_activity_records
-    ALTER COLUMN status SET DEFAULT 'recorded';
-ALTER TABLE public.payment_activity_records
-    DROP COLUMN IF EXISTS amount_paid;
+ALTER TABLE public.payment_histories
+    DROP CONSTRAINT IF EXISTS payment_histories_status_check;
 
 DO $$
 BEGIN
-    IF to_regclass('public.payment_histories') IS NOT NULL THEN
-        ALTER TABLE public.payment_histories
-            DROP CONSTRAINT IF EXISTS payment_histories_status_check;
-        ALTER TABLE public.payment_histories
-            ADD COLUMN IF NOT EXISTS payment_description TEXT;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payment_histories'
+          AND column_name = 'reference_number'
+    ) THEN
+        EXECUTE 'UPDATE public.payment_histories
+                 SET transaction_ref = COALESCE(transaction_ref, reference_number::text)
+                 WHERE transaction_ref IS NULL';
+    END IF;
 
-        UPDATE public.payment_histories AS activity
-        SET payment_description = COALESCE(
-            NULLIF(
-                concat_ws(
-                    ' / ',
-                    NULLIF(btrim(ticket.payment_description), ''),
-                    NULLIF(btrim(ticket.payment_period), '')
-                ),
-                ''
-            ),
-            'Payment activity'
-        )
-        FROM public.queue_tickets AS ticket
-        WHERE ticket.ticket_number = activity.reference_number;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payment_histories'
+          AND column_name = 'course'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payment_histories'
+          AND column_name = 'year_level'
+    ) THEN
+        EXECUTE $sql$
+            UPDATE public.payment_histories
+            SET course_year = COALESCE(
+                NULLIF(course_year, ''),
+                NULLIF(concat_ws(' / ', NULLIF(course::text, ''), NULLIF(year_level::text, '')), '')
+            )
+            WHERE course_year IS NULL OR course_year = ''
+        $sql$;
+    END IF;
 
-        UPDATE public.payment_histories
-        SET payment_description = COALESCE(
-                NULLIF(btrim(payment_description), ''),
-                'Payment activity'
-            ),
-            status = 'recorded';
-
-        ALTER TABLE public.payment_histories
-            DROP COLUMN IF EXISTS amount_paid;
-        ALTER TABLE public.payment_histories
-            DROP COLUMN IF EXISTS payment_method;
-
-        INSERT INTO public.payment_activity_records AS current_record (
-            reference_number,
-            student_id,
-            student_name,
-            course,
-            year_level,
-            payment_description,
-            created_at,
-            cashier_staff,
-            status
-        )
-        SELECT reference_number,
-               student_id,
-               student_name,
-               course,
-               year_level,
-               payment_description,
-               created_at,
-               cashier_staff,
-               'recorded'
-        FROM public.payment_histories
-        ON CONFLICT (reference_number) DO UPDATE
-        SET student_id = EXCLUDED.student_id,
-            student_name = CASE
-                WHEN current_record.student_name = ''
-                    THEN EXCLUDED.student_name
-                ELSE current_record.student_name
-            END,
-            course = COALESCE(current_record.course, EXCLUDED.course),
-            year_level = COALESCE(current_record.year_level, EXCLUDED.year_level),
-            payment_description = CASE
-                WHEN current_record.payment_description = 'Payment activity'
-                    THEN EXCLUDED.payment_description
-                ELSE current_record.payment_description
-            END,
-            cashier_staff = CASE
-                WHEN current_record.cashier_staff = 'Historical import'
-                    THEN EXCLUDED.cashier_staff
-                ELSE current_record.cashier_staff
-            END,
-            status = 'recorded';
-
-        DROP TABLE public.payment_histories;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payment_histories'
+          AND column_name = 'payment_description'
+    ) THEN
+        EXECUTE 'UPDATE public.payment_histories
+                 SET payment_type = COALESCE(payment_type, payment_description::text)
+                 WHERE payment_type IS NULL';
+    ELSIF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payment_histories'
+          AND column_name = 'payment_method'
+    ) THEN
+        EXECUTE 'UPDATE public.payment_histories
+                 SET payment_type = COALESCE(payment_type, payment_method::text)
+                 WHERE payment_type IS NULL';
     END IF;
 END
 $$;
 
-CREATE INDEX IF NOT EXISTS payment_activity_records_created_at_idx
-    ON public.payment_activity_records (created_at DESC);
+UPDATE public.payment_histories
+SET transaction_ref = COALESCE(NULLIF(transaction_ref, ''), 'legacy-' || ctid::text),
+    student_id = COALESCE(student_id, ''),
+    student_name = COALESCE(student_name, ''),
+    payment_type = COALESCE(NULLIF(payment_type, ''), 'Payment activity'),
+    cashier_staff = COALESCE(NULLIF(cashier_staff, ''), 'Historical import'),
+    status = COALESCE(NULLIF(status, ''), 'recorded'),
+    created_at = COALESCE(created_at, CURRENT_TIMESTAMP);
 
-CREATE INDEX IF NOT EXISTS payment_activity_records_student_id_idx
-    ON public.payment_activity_records (student_id, created_at DESC);
+ALTER TABLE public.payment_histories
+    ALTER COLUMN transaction_ref SET NOT NULL,
+    ALTER COLUMN student_id SET NOT NULL,
+    ALTER COLUMN student_name SET NOT NULL,
+    ALTER COLUMN payment_type SET NOT NULL,
+    ALTER COLUMN cashier_staff SET NOT NULL,
+    ALTER COLUMN status SET DEFAULT 'recorded',
+    ALTER COLUMN status SET NOT NULL,
+    ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP,
+    ALTER COLUMN created_at SET NOT NULL;
+
+DO $$
+BEGIN
+    IF to_regclass('public.payment_activity_records') IS NOT NULL THEN
+        INSERT INTO public.payment_histories (
+            transaction_ref,
+            student_id,
+            student_name,
+            course_year,
+            payment_type,
+            cashier_staff,
+            status,
+            created_at
+        )
+        SELECT reference_number,
+               student_id,
+               student_name,
+               concat_ws(' / ', NULLIF(course, ''), NULLIF(year_level, '')),
+               payment_description,
+               cashier_staff,
+               COALESCE(NULLIF(status, ''), 'recorded'),
+               created_at
+        FROM public.payment_activity_records
+        WHERE reference_number IS NOT NULL
+        ON CONFLICT DO NOTHING;
+    END IF;
+END
+$$;
+
+ALTER TABLE public.payment_histories
+    DROP COLUMN IF EXISTS amount_paid;
+
+CREATE INDEX IF NOT EXISTS payment_histories_created_at_idx
+    ON public.payment_histories (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS payment_histories_student_id_idx
+    ON public.payment_histories (student_id, created_at DESC);
 
 ALTER TABLE public.queue_tickets
     DROP COLUMN IF EXISTS payment_percentage;

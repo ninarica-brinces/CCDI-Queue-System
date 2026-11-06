@@ -20,15 +20,18 @@ the project reference):
 
 The Docker image installs PHP's `pdo_pgsql` and `pgsql` extensions. For local
 development, set the same variables in the environment used to run PHP. The
-API returns HTTP 500 for uncaught connection or query errors and logs detailed
-diagnostics under the included request ID.
+API returns HTTP 503 when PostgreSQL is temporarily unavailable, HTTP 500 for
+unexpected server/query errors, and logs detailed diagnostics under the
+included request ID.
 
 Before deploying, apply the database schema for the existing queue tables.
 Then run [`payment_activity_records.sql`](./payment_activity_records.sql) in
-the Supabase SQL Editor. This aligns the payment activity ledger, migrates
-legacy non-monetary activity details into the canonical table, and removes
-monetary/payment-calculation columns and the legacy history table. API failures
-include a request ID that can be matched with Render logs.
+the Supabase SQL Editor. This aligns the payment activity ledger with
+`public.payment_histories` (`transaction_ref`, `student_id`, `student_name`,
+`course_year`, `payment_type`, `cashier_staff`, `status`, and `created_at`),
+copies rows from the legacy `payment_activity_records` table when present, and
+removes monetary/payment-calculation columns. API failures include a request ID
+that can be matched with Render logs.
 
 `index.html` redirects to the student portal in `student.html`; the cashier
 terminal is in `cashier.html` and uses `app.js`. Both call the same relative
@@ -46,7 +49,7 @@ SameSite cookies and expire after 30 minutes of inactivity.
 Queue requests store the selected service, payment type, and period as activity
 descriptions. Completing a tuition-payment ticket records its reference,
 student/course, payment description, cashier, status, and timestamp in
-`payment_activity_records` within the same transaction as queue completion.
+`payment_histories` within the same transaction as queue completion.
 It does not store monetary amounts, read student balances, or calculate
 collection or revenue totals. Daily queue reset does not delete payment
 activity records. The cashier view supports search, status/date filters,

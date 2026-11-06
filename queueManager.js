@@ -9,6 +9,23 @@ const EMPTY_STATE = {
   counters: { regSequence: 0, prioSequence: 0, completed: 0, skipped: 0 }
 };
 
+async function readApiResponse(response) {
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    const error = new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    const error = new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
+  return result;
+}
+
 export class QueueManager {
   #state = structuredClone(EMPTY_STATE);
   #listeners = [];
@@ -46,7 +63,7 @@ export class QueueManager {
         if (!response.ok) {
           let message = `Service Unavailable: ${response.status}`;
           try {
-            const errorResult = await response.json();
+            const errorResult = await readApiResponse(response);
             if (errorResult.message) message = errorResult.message;
           } catch {
             // Keep the HTTP status message when the server does not return JSON.
@@ -56,7 +73,7 @@ export class QueueManager {
           throw error;
         }
 
-        const result = await response.json();
+        const result = await readApiResponse(response);
         if (!result.success || !Array.isArray(result.data)) {
           throw new Error(result.message || 'Failed to load queue state');
         }
@@ -181,7 +198,7 @@ export class QueueManager {
           paymentPeriod
         })
       });
-      const result = await response.json();
+      const result = await readApiResponse(response);
       if (!response.ok || !result.success) {
         if (response.status === 403 && result.code === 'STUDENT_RECORD_MISMATCH') {
           throw new Error(
@@ -207,7 +224,7 @@ export class QueueManager {
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.#csrfToken },
         body: JSON.stringify({ action: 'call_next', lane })
       });
-      const result = await response.json();
+      const result = await readApiResponse(response);
       if (!response.ok || !result.success) {
         throw new Error(result.message || 'Failed to call the next ticket');
       }
@@ -250,7 +267,7 @@ export class QueueManager {
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.#csrfToken },
         body: JSON.stringify({ action: 'recall_ticket', ticket_id: ticket.dbId })
       });
-      const result = await response.json();
+      const result = await readApiResponse(response);
       if (!response.ok || !result.success) {
         throw new Error(result.message || 'Failed to recall ticket');
       }
@@ -291,7 +308,7 @@ export class QueueManager {
         status: status
       })
     });
-    const result = await response.json();
+    const result = await readApiResponse(response);
     if (!response.ok || !result.success) {
       throw new Error(result.message || 'Failed to update ticket status');
     }
@@ -315,7 +332,7 @@ export class QueueManager {
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.#csrfToken },
         body: JSON.stringify({ action: 'reset_day' })
       });
-      const result = await response.json();
+      const result = await readApiResponse(response);
       if (!response.ok || !result.success) {
         throw new Error(result.message || 'Failed to reset queue');
       }

@@ -569,10 +569,11 @@
   </dialog>
 
   <dialog id="cashierLoginDialog" class="modal login-modal">
-    <div class="modal-content">
-      <header class="modal-header">
-        <h2>Cashier Sign In</h2>
-      </header>
+    <div class="modal-content cashier-login-content">
+      <div class="cashier-login-header">
+        <h2>Cashier Terminal Access</h2>
+        <p>Authorized staff login</p>
+      </div>
       <form id="cashierLoginForm" class="login-form" action="cashier.html" method="post">
         <div class="form-group">
           <label for="cashierLoginUsername">Username</label>
@@ -585,8 +586,9 @@
             autocomplete="off">
         </div>
         <p id="cashierLoginMessage" class="login-message" role="alert"></p>
-        <footer class="modal-actions">
+        <footer class="modal-actions cashier-login-actions">
           <button type="submit" class="btn btn-primary">Sign In</button>
+          <button type="button" id="cashierLoginCancelBtn" class="cashier-login-cancel">Cancel</button>
         </footer>
       </form>
     </div>

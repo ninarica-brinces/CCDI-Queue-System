@@ -400,6 +400,14 @@ function renderDistributionTable(tbody, dataMap, total) {
 }
 
 function bindEvents() {
+  const returnToPortal = () => window.location.assign('index.html');
+
+  elements.cashierLoginCancelBtn.addEventListener('click', returnToPortal);
+  elements.cashierLoginDialog.addEventListener('cancel', event => {
+    event.preventDefault();
+    returnToPortal();
+  });
+
   elements.cashierLoginForm.addEventListener('submit', async event => {
     event.preventDefault();
     elements.cashierLoginMessage.textContent = '';
@@ -610,6 +618,7 @@ function init() {
 
     cashierLoginDialog: document.getElementById('cashierLoginDialog'),
     cashierLoginForm: document.getElementById('cashierLoginForm'),
+    cashierLoginCancelBtn: document.getElementById('cashierLoginCancelBtn'),
     cashierLoginUsername: document.getElementById('cashierLoginUsername'),
     cashierLoginPassword: document.getElementById('cashierLoginPassword'),
     cashierLoginMessage: document.getElementById('cashierLoginMessage'),

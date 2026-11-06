@@ -1,6 +1,7 @@
 :root {
   color-scheme: light;
   --canvas: #F3F2F1;
+  --page-gradient: linear-gradient(135deg, #F1F5F9 0%, #E8EEF7 48%, #F8FAFC 100%);
   --surface: #FFFFFF;
   --surface-subtle: #FAF9F8;
   --border: #EDEBE9;
@@ -46,7 +47,8 @@ html,
 body {
   min-height: 100%;
   margin: 0;
-  background: var(--canvas);
+  background: var(--page-gradient);
+  background-attachment: fixed;
   color: var(--text);
   font-family: "Segoe UI", SegoeUI, Tahoma, Arial, sans-serif;
 }
@@ -210,6 +212,22 @@ main {
 
 .page-view.active {
   display: block;
+  animation: view-enter .24s ease both;
+}
+
+.view-section.active {
+  animation: view-enter .24s ease both;
+}
+
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 header {
@@ -416,7 +434,9 @@ input[type="reset"],
 .btn-action,
 .btn-text-danger,
 .logout-button,
-.close-btn {
+.close-btn,
+a[href]:not(.brand),
+[role="button"] {
   transition:
     background-color .18s ease,
     border-color .18s ease,
@@ -436,7 +456,9 @@ input[type="reset"]:not(:disabled):hover,
 .btn-action:not(:disabled):hover,
 .btn-text-danger:hover,
 .logout-button:hover,
-.close-btn:hover {
+.close-btn:hover,
+a[href]:not(.brand):hover,
+[role="button"]:hover {
   transform: translateY(-1px);
   box-shadow: 0 3px 8px rgba(32, 31, 30, .14);
 }
@@ -452,9 +474,38 @@ input[type="reset"]:not(:disabled):active,
 .btn-action:not(:disabled):active,
 .btn-text-danger:active,
 .logout-button:active,
-.close-btn:active {
+.close-btn:active,
+a[href]:not(.brand):active,
+[role="button"]:active {
   transform: translateY(0) scale(.98);
   box-shadow: none;
+}
+
+.card,
+.kpi-card,
+.portal-card,
+.service-card {
+  transition:
+    background-color .2s ease,
+    border-color .2s ease,
+    box-shadow .2s ease,
+    transform .2s ease;
+}
+
+.card:hover,
+.kpi-card:hover {
+  box-shadow: 0 4px 12px rgba(32, 31, 30, .1);
+}
+
+.service-card:active,
+.portal-card:active {
+  transform: translateY(0) scale(.99);
+}
+
+input,
+select,
+textarea {
+  transition: border-color .18s ease, box-shadow .18s ease;
 }
 
 button:disabled,
@@ -900,6 +951,65 @@ td {
   width: min(420px, calc(100vw - 32px));
 }
 
+.cashier-page #cashierLoginDialog {
+  width: min(400px, calc(100vw - 32px));
+  padding: 24px;
+  border-radius: 0;
+  background: #FFFFFF;
+  box-shadow: var(--shadow);
+}
+
+.cashier-page #cashierLoginDialog::backdrop {
+  background: rgba(32, 31, 30, .48);
+  backdrop-filter: blur(3px);
+}
+
+.cashier-login-content {
+  padding: 0;
+}
+
+.cashier-login-header {
+  margin-bottom: 1.2rem;
+  text-align: center;
+}
+
+.cashier-login-header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.2rem;
+  font-weight: 650;
+}
+
+.cashier-login-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+.cashier-login-actions {
+  flex-direction: column;
+  gap: 0;
+  margin-top: 8px;
+}
+
+.cashier-login-actions .btn {
+  width: 100%;
+  min-height: 42px;
+}
+
+.cashier-login-cancel {
+  width: 100%;
+  min-height: 30px;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: .82rem;
+  text-align: center;
+}
+
 .login-form .form-group input {
   min-height: 42px;
 }
@@ -921,7 +1031,7 @@ td {
   display: block;
   min-height: 100vh;
   overflow: auto;
-  background: var(--canvas) !important;
+  background: var(--page-gradient) !important;
   color: var(--text) !important;
   font-family: "Segoe UI", SegoeUI, Tahoma, Arial, sans-serif !important;
 }
@@ -978,9 +1088,9 @@ td {
 }
 
 .portal-page .portal-card:hover {
-  transform: none;
+  transform: translateY(-3px);
   border-color: var(--primary) !important;
-  box-shadow: var(--shadow) !important;
+  box-shadow: 0 8px 20px rgba(32, 31, 30, .12) !important;
 }
 
 .portal-page .portal-icon {

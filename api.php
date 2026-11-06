@@ -192,6 +192,40 @@ function requestString($input, $key, $maximumLength = 500)
     return $value;
 }
 
+function emptyPaymentActivityPayload($pageSize = 50)
+{
+    $today = new DateTimeImmutable('today', new DateTimeZone(date_default_timezone_get()));
+    $activity = [];
+    for ($daysAgo = 6; $daysAgo >= 0; $daysAgo--) {
+        $activityDate = $today->modify("-$daysAgo days")->format('Y-m-d');
+        $activity[] = [
+            'activity_date' => $activityDate,
+            'records' => 0,
+        ];
+    }
+
+    return [
+        'configured' => true,
+        'success' => true,
+        'data' => [],
+        'total_records' => 0,
+        'today_records' => 0,
+        'pagination' => [
+            'page' => 1,
+            'page_size' => $pageSize,
+            'total' => 0,
+            'pages' => 1,
+        ],
+        'metrics' => [
+            'total_records' => 0,
+            'today_records' => 0,
+            'active_queue_count' => 0,
+        ],
+        'statuses' => [],
+        'activity' => $activity,
+    ];
+}
+
 function verifyRequestOrigin()
 {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -372,6 +406,18 @@ $conn = null;
                 'code' => 'DATABASE_UNAVAILABLE',
                 'request_id' => $requestId,
                 'message' => 'The database is temporarily unavailable. Please try again shortly.',
+            ]);
+        } catch (RuntimeException $error) {
+            error_log(sprintf(
+                'Queue API database configuration failure [%s]: %s',
+                $requestId,
+                $error->getMessage()
+            ));
+            respond(503, [
+                'success' => false,
+                'code' => 'DATABASE_CONFIGURATION_INVALID',
+                'request_id' => $requestId,
+                'message' => 'The database is not configured. Set the required PostgreSQL connection settings and try again.',
             ]);
         }
     }
@@ -565,10 +611,7 @@ $conn = null;
         if (!$hasHistoryColumns) {
             $legacyTableQuery = prepareQuery($conn, "SELECT to_regclass('public.payment_activity_records') IS NOT NULL");
             if (!(bool) $legacyTableQuery->fetchColumn()) {
-                respond(503, [
-                    'success' => false,
-                    'message' => 'Payment activity records are not configured. Apply the payment activity migration and try again.',
-                ]);
+                respond(200, emptyPaymentActivityPayload());
             }
             $recordsSourceSql = "(
                 SELECT reference_number::text AS transaction_ref,
@@ -723,8 +766,11 @@ $conn = null;
         }
 
         respond(200, [
+            'configured' => true,
             'success' => true,
             'data' => $records,
+            'total_records' => (int) $metrics['total_records'],
+            'today_records' => (int) $metrics['today_records'],
             'pagination' => [
                 'page' => $page,
                 'page_size' => $pageSize,

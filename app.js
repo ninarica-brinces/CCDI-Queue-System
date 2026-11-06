@@ -8,7 +8,7 @@ let paymentActivityRecordRequestId = 0;
 let paymentActivityRecordSearchTimer;
 let paymentActivityRecordRefreshTimer;
 
-async function readApiResponse(response) {
+async function readApiResponse(response, allowEmptyArray = false) {
   let result;
   try {
     result = await response.json();
@@ -17,7 +17,11 @@ async function readApiResponse(response) {
     error.status = response.status;
     throw error;
   }
-  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    (Array.isArray(result) && !(allowEmptyArray && result.length === 0))
+  ) {
     const error = new Error(`The server returned an invalid response (HTTP ${response.status}).`);
     error.status = response.status;
     throw error;
@@ -312,30 +316,48 @@ async function fetchPaymentActivityRecords() {
       credentials: 'same-origin',
       cache: 'no-store'
     });
-    const result = await readApiResponse(response);
-    if (!response.ok || !result.success || !Array.isArray(result.data)) {
+    const result = await readApiResponse(response, true);
+    if (!response.ok || (!Array.isArray(result) && (!result.success || !Array.isArray(result.data)))) {
       throw new Error(result.message || 'Unable to load payment activity records.');
     }
     if (requestId !== paymentActivityRecordRequestId) return;
 
-    updatePaymentActivityStatusOptions(result.statuses);
-    elements.paymentActivityRecordTotalRecords.textContent =
-      Number(result.metrics.total_records).toLocaleString('en-PH');
-    elements.paymentActivityRecordTodayRecords.textContent =
-      Number(result.metrics.today_records).toLocaleString('en-PH');
-    elements.paymentActivityRecordActiveQueue.textContent =
-      Number(result.metrics.active_queue_count).toLocaleString('en-PH');
-    renderPaymentActivity(result.activity);
-    renderPaymentActivityRecordRows(result.data);
+    const payload = Array.isArray(result)
+      ? {
+          configured: true,
+          success: true,
+          data: [],
+          pagination: { page: 1, pages: 1, total: 0 },
+          metrics: { total_records: 0, today_records: 0, active_queue_count: 0 },
+          statuses: [],
+          activity: []
+        }
+      : result;
+    const metrics = payload.metrics || {};
+    const paginationResult = payload.pagination || {};
+    const pagination = {
+      page: Number(paginationResult.page) || 1,
+      pages: Math.max(1, Number(paginationResult.pages) || 1),
+      total: Number(paginationResult.total ?? payload.data.length) || 0
+    };
 
-    const pagination = result.pagination;
+    updatePaymentActivityStatusOptions(Array.isArray(payload.statuses) ? payload.statuses : []);
+    elements.paymentActivityRecordTotalRecords.textContent =
+      Number(metrics.total_records ?? payload.total_records ?? 0).toLocaleString('en-PH');
+    elements.paymentActivityRecordTodayRecords.textContent =
+      Number(metrics.today_records ?? payload.today_records ?? 0).toLocaleString('en-PH');
+    elements.paymentActivityRecordActiveQueue.textContent =
+      Number(metrics.active_queue_count ?? 0).toLocaleString('en-PH');
+    renderPaymentActivity(Array.isArray(payload.activity) ? payload.activity : []);
+    renderPaymentActivityRecordRows(payload.data);
+
     paymentActivityRecordPage = pagination.page;
     elements.paymentActivityRecordPageInfo.textContent =
-      `Page ${pagination.page} of ${pagination.pages} · ${pagination.total.toLocaleString('en-PH')} records`;
+      `Page ${pagination.page} of ${pagination.pages} · ${Number(pagination.total || 0).toLocaleString('en-PH')} records`;
     elements.paymentActivityRecordPrevious.disabled = pagination.page <= 1;
     elements.paymentActivityRecordNext.disabled = pagination.page >= pagination.pages;
     elements.paymentActivityRecordMessage.textContent =
-      pagination.total === 0 ? 'No records found.' : `${pagination.total.toLocaleString('en-PH')} matching records`;
+      Number(pagination.total || 0) === 0 ? 'No records found.' : `${Number(pagination.total).toLocaleString('en-PH')} matching records`;
   } catch (error) {
     if (requestId !== paymentActivityRecordRequestId) return;
     console.error('Failed to load payment activity records:', error);

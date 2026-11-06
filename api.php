@@ -173,13 +173,13 @@ function issueSession($role, $identity)
 function restrictTicketForRole($ticket, $role, $studentId = '', $hasActiveQueue = true)
 {
     if (($ticket['transaction_type'] ?? '') !== 'Tuition Payment') {
-        foreach (['payment_method', 'payment_period', 'payment_percentage', 'discount'] as $field) {
+        foreach (['payment_description', 'payment_period'] as $field) {
             $ticket[$field] = null;
         }
     }
 
     if ($role === 'student' && (($ticket['student_id'] ?? '') !== $studentId || !$hasActiveQueue)) {
-        foreach (['student_name', 'student_id', 'course', 'address', 'year_level', 'payment_method', 'payment_period', 'payment_percentage', 'discount', 'notes'] as $field) {
+        foreach (['student_name', 'student_id', 'course', 'address', 'year_level', 'payment_description', 'payment_period', 'notes'] as $field) {
             $ticket[$field] = null;
         }
     }
@@ -234,7 +234,7 @@ $conn = null;
     }
 
     $routes = [
-        'GET' => ['auth_status', 'get_queue_state', 'get_state', 'get_payment_details', 'get_cashier_payment_histories'],
+        'GET' => ['auth_status', 'get_queue_state', 'get_state', 'get_student_payment_activity_records', 'get_cashier_payment_activity_records'],
         'POST' => [
             'cashier_login',
             'student_login',
@@ -315,7 +315,7 @@ $conn = null;
             "SELECT student_number,
                     student_number AS student_id,
                     concat_ws(' ', NULLIF(btrim(first_name), ''), NULLIF(btrim(last_name), '')) AS full_name,
-                    current_balance, NULL AS course, NULL AS address, NULL AS year_level
+                    NULL AS course, NULL AS address, NULL AS year_level
              FROM public.student_profiles
              WHERE student_number = ?
                AND lower(concat_ws(' ', btrim(first_name), btrim(last_name))) = lower(btrim(?))
@@ -365,7 +365,7 @@ $conn = null;
             $student = $conn->prepare(
                 "SELECT student_number AS student_id,
                         btrim(first_name) || ' ' || btrim(last_name) AS full_name,
-                        current_balance, NULL AS course, NULL AS address, NULL AS year_level
+                NULL AS course, NULL AS address, NULL AS year_level
                  FROM public.student_profiles WHERE student_number = ? LIMIT 1"
             );
             $student->execute([$identity['student_id'] ?? '']);
@@ -427,9 +427,9 @@ $conn = null;
     }
 
 
-    // --- Spec 2: Payment details access gate ---
-    // Students can only retrieve payment history if they have a queue ticket for today.
-    if ($method === 'GET' && $action === 'get_payment_details') {
+    // --- Spec 2: Payment activity record access gate ---
+    // Students can only retrieve their payment activity records if they have a queue ticket for today.
+    if ($method === 'GET' && $action === 'get_student_payment_activity_records') {
         $role = $_SESSION['role'] ?? '';
         if (!in_array($role, ['student', 'cashier'], true)) {
             respond(401, ['success' => false, 'message' => 'Authentication required']);
@@ -452,58 +452,51 @@ $conn = null;
             respond(403, [
                 'success' => false,
                 'code'    => 'QUEUE_ACCESS_REQUIRED',
-                'message' => 'You must join the queue first to view payment details.',
+                'message' => 'You must join the queue first to view payment activity records.',
             ]);
         }
-        $histories = $conn->prepare(
-            'SELECT reference_number, amount_paid, created_at
+        $activities = $conn->prepare(
+            'SELECT reference_number, payment_description, created_at
              FROM public.payment_activity_records WHERE student_id = ?
              ORDER BY created_at DESC LIMIT 50'
         );
-        $histories->execute([$studentId]);
-        $historyRows = $histories->fetchAll();
-
-        $profileStmt = $conn->prepare(
-            'SELECT current_balance FROM public.student_profiles WHERE student_number = ? LIMIT 1'
-        );
-        $profileStmt->execute([$studentId]);
-        $profileRow = $profileStmt->fetch();
+        $activities->execute([$studentId]);
+        $activityRows = $activities->fetchAll();
 
         respond(200, [
             'success' => true,
             'student_id' => $studentId,
-            'current_balance' => (float) ($profileRow['current_balance'] ?? 0),
-            'data' => $historyRows
+            'data' => $activityRows
         ]);
     }
 
-    if ($method === 'GET' && $action === 'get_cashier_payment_histories') {
+    if ($method === 'GET' && $action === 'get_cashier_payment_activity_records') {
         requireRole('cashier');
 
         $range = $_GET['range'] ?? 'all';
         if (!is_string($range)) {
-            respond(400, ['success' => false, 'message' => 'Invalid payment history date range']);
+            respond(400, ['success' => false, 'message' => 'Invalid payment activity date range']);
         }
         if (!in_array($range, ['all', 'today', '7days', '30days'], true)) {
-            respond(400, ['success' => false, 'message' => 'Invalid payment history date range']);
+            respond(400, ['success' => false, 'message' => 'Invalid payment activity date range']);
         }
 
         $statusInput = $_GET['status'] ?? 'all';
         if (!is_string($statusInput)) {
-            respond(400, ['success' => false, 'message' => 'Invalid payment history status']);
+            respond(400, ['success' => false, 'message' => 'Invalid payment activity status']);
         }
         $status = strtolower(trim($statusInput));
-        if (!in_array($status, ['all', 'paid', 'pending'], true)) {
-            respond(400, ['success' => false, 'message' => 'Invalid payment history status']);
+        if (!in_array($status, ['all', 'recorded'], true)) {
+            respond(400, ['success' => false, 'message' => 'Invalid payment activity status']);
         }
 
         $searchInput = $_GET['search'] ?? '';
         if (!is_string($searchInput)) {
-            respond(400, ['success' => false, 'message' => 'Invalid payment history search']);
+            respond(400, ['success' => false, 'message' => 'Invalid payment activity search']);
         }
         $search = trim($searchInput);
         if (strlen($search) > 120) {
-            respond(400, ['success' => false, 'message' => 'Payment history search is too long']);
+            respond(400, ['success' => false, 'message' => 'Payment activity search is too long']);
         }
 
         $timezone = new DateTimeZone(date_default_timezone_get());
@@ -514,7 +507,6 @@ $conn = null;
             '30days' => $localToday->modify('-29 days'),
             default => null,
         };
-        $startOfDay = $localToday->format('Y-m-d\TH:i:sP');
         $endOfDay = $localToday->modify('+1 day')->format('Y-m-d\TH:i:sP');
 
         $where = [];
@@ -522,7 +514,7 @@ $conn = null;
         if ($search !== '') {
             $where[] = "(reference_number ILIKE ? OR student_id ILIKE ? OR student_name ILIKE ?
                          OR COALESCE(course, '') ILIKE ? OR COALESCE(year_level, '') ILIKE ?
-                         OR payment_method ILIKE ? OR cashier_staff ILIKE ?)";
+                         OR payment_description ILIKE ? OR cashier_staff ILIKE ?)";
             $searchPattern = '%' . $search . '%';
             array_push(
                 $parameters,
@@ -546,36 +538,35 @@ $conn = null;
         }
         $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
 
-        $countQuery = $conn->prepare('SELECT COUNT(*) FROM public.payment_histories' . $whereSql);
+        $countQuery = $conn->prepare('SELECT COUNT(*) FROM public.payment_activity_records' . $whereSql);
         $countQuery->execute($parameters);
         $filteredCount = (int) $countQuery->fetchColumn();
 
         $pageSize = 50;
-        $exportAll = ($_GET['all'] ?? '') === '1';
         $page = filter_var($_GET['page'] ?? '1', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if ($page === false) {
-            respond(400, ['success' => false, 'message' => 'Invalid payment history page']);
+            respond(400, ['success' => false, 'message' => 'Invalid payment activity page']);
         }
         $page = min($page, max(1, (int) ceil($filteredCount / $pageSize)));
-        $historyQuery = $conn->prepare(
-            'SELECT reference_number, student_id, student_name, course, year_level, amount_paid,
-                    payment_method, created_at, cashier_staff, status
-             FROM public.payment_histories' . $whereSql .
+        $recordQuery = $conn->prepare(
+            'SELECT reference_number, student_id, student_name, course, year_level,
+                    payment_description, created_at, cashier_staff, status
+             FROM public.payment_activity_records' . $whereSql .
             ' ORDER BY created_at DESC, reference_number DESC' .
-            ($exportAll ? '' : ' LIMIT ' . $pageSize . ' OFFSET ' . (($page - 1) * $pageSize))
+            ' LIMIT ' . $pageSize . ' OFFSET ' . (($page - 1) * $pageSize)
         );
-        $historyQuery->execute($parameters);
-        $historyRows = $historyQuery->fetchAll();
+        $recordQuery->execute($parameters);
+        $records = $recordQuery->fetchAll();
 
         $metricsQuery = $conn->prepare(
-            "SELECT COALESCE(SUM(amount_paid) FILTER (WHERE status = 'paid'), 0) AS total_collections,
-                    COUNT(*) AS total_transactions,
-                    COALESCE(SUM(amount_paid) FILTER (
-                        WHERE status = 'paid' AND created_at >= ? AND created_at < ?
-                    ), 0) AS daily_revenue
-             FROM public.payment_histories"
+            "SELECT COUNT(*) AS total_records,
+                    COUNT(*) FILTER (WHERE created_at >= ? AND created_at < ?) AS today_records
+             FROM public.payment_activity_records"
         );
-        $metricsQuery->execute([$startOfDay, $endOfDay]);
+        $metricsQuery->execute([
+            $localToday->format('Y-m-d\TH:i:sP'),
+            $endOfDay,
+        ]);
         $metrics = $metricsQuery->fetch();
 
         $queueCountQuery = $conn->prepare(
@@ -586,9 +577,8 @@ $conn = null;
 
         $activityQuery = $conn->prepare(
             "SELECT (created_at AT TIME ZONE ?)::date AS activity_date,
-                    COALESCE(SUM(amount_paid) FILTER (WHERE status = 'paid'), 0) AS revenue,
-                    COUNT(*) AS transactions
-             FROM public.payment_histories
+                    COUNT(*) AS records
+             FROM public.payment_activity_records
              WHERE created_at >= ? AND created_at < ?
              GROUP BY (created_at AT TIME ZONE ?)::date
              ORDER BY activity_date"
@@ -608,25 +598,22 @@ $conn = null;
             $activityDate = $localToday->modify("-$daysAgo days")->format('Y-m-d');
             $activity[] = $activityByDate[$activityDate] ?? [
                 'activity_date' => $activityDate,
-                'revenue' => 0,
-                'transactions' => 0,
+                'records' => 0,
             ];
         }
 
         respond(200, [
             'success' => true,
-            'data' => $historyRows,
+            'data' => $records,
             'pagination' => [
                 'page' => $page,
                 'page_size' => $pageSize,
                 'total' => $filteredCount,
                 'pages' => max(1, (int) ceil($filteredCount / $pageSize)),
-                'export_all' => $exportAll,
             ],
             'metrics' => [
-                'total_collections' => (float) $metrics['total_collections'],
-                'total_transactions' => (int) $metrics['total_transactions'],
-                'daily_revenue' => (float) $metrics['daily_revenue'],
+                'total_records' => (int) $metrics['total_records'],
+                'today_records' => (int) $metrics['today_records'],
                 'active_queue_count' => (int) $queueCountQuery->fetchColumn(),
             ],
             'activity' => $activity,
@@ -651,8 +638,6 @@ $conn = null;
         $service = requestString($input, 'service', 120);
         $payment = requestString($input, 'payment', 240);
         $paymentPeriod = requestString($input, 'paymentPeriod', 64);
-        $paymentPercentage = requestString($input, 'paymentPercentage', 32);
-        $discount = requestString($input, 'discount', 120);
         $notes = requestString($input, 'notes', 240);
 
         if (!in_array($lane, ['Regular', 'Priority'], true)) {
@@ -676,7 +661,7 @@ $conn = null;
         $student = $conn->prepare(
             "SELECT student_number AS student_id,
                     btrim(first_name) || ' ' || btrim(last_name) AS full_name,
-                    current_balance, NULL AS course, NULL AS address, NULL AS year_level
+            NULL AS course, NULL AS address, NULL AS year_level
              FROM public.student_profiles
              WHERE lower(btrim(student_number)) = lower(btrim(?))
                AND regexp_replace(
@@ -720,14 +705,9 @@ $conn = null;
         }
         if ($service !== 'Tuition Payment') {
             $paymentPeriod = '';
-            $paymentPercentage = '';
-            $discount = '';
             $payment = 'N/A (Document Only)';
         } elseif (!in_array($payment, [
             'Full Payment',
-            'Partial Payment (Custom Amount)',
-            'Partial Payment (50%)',
-            'Partial Payment (25%)',
             'Partial Payment',
             'Promissory Note',
             'Promissory',
@@ -735,49 +715,6 @@ $conn = null;
             $conn->rollBack();
             respond(400, ['success' => false, 'message' => 'Select a supported tuition payment option']);
         }
-        $customAmount = isset($input['customAmount']) && is_numeric($input['customAmount'])
-            ? (float) $input['customAmount']
-            : null;
-        if ($service === 'Tuition Payment') {
-            if ($customAmount !== null && $customAmount > 0) {
-                $balStmt = $conn->prepare('SELECT current_balance FROM public.student_profiles WHERE student_number = ? LIMIT 1');
-                $balStmt->execute([$profile['student_id']]);
-                $studentBalance = (float) ($balStmt->fetchColumn() ?: 0);
-                if ($studentBalance > 0) {
-                    $computedPct = round(min(100.0, ($customAmount / $studentBalance) * 100), 2);
-                    $paymentPercentage = (string) $computedPct;
-                } else {
-                    $paymentPercentage = '100';
-                }
-                if ($discount === '') {
-                    $discount = 'PHP ' . number_format($customAmount, 2);
-                }
-            } elseif ($paymentPercentage !== '') {
-                if (preg_match('/^(\d+(?:\.\d+)?)%?$/D', $paymentPercentage, $matches)) {
-                    $val = (float) $matches[1];
-                    if ($val > 100) {
-                        $balStmt = $conn->prepare('SELECT current_balance FROM public.student_profiles WHERE student_number = ? LIMIT 1');
-                        $balStmt->execute([$profile['student_id']]);
-                        $studentBalance = (float) ($balStmt->fetchColumn() ?: 0);
-                        if ($studentBalance > 0) {
-                            $paymentPercentage = (string) round(min(100.0, ($val / $studentBalance) * 100), 2);
-                        } else {
-                            $paymentPercentage = '100';
-                        }
-                        if ($discount === '') {
-                            $discount = 'PHP ' . number_format($val, 2);
-                        }
-                    }
-                } else {
-                    $conn->rollBack();
-                    respond(400, ['success' => false, 'message' => 'Payment percentage must be a number from 0 to 100 or a valid amount.']);
-                }
-            } elseif ($payment === 'Partial Payment') {
-                $conn->rollBack();
-                respond(400, ['success' => false, 'message' => 'A payment amount or percentage is required for partial payment.']);
-            }
-        }
-
         $studentLock = $conn->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
         $studentLock->execute(["student:$today:{$profile['student_id']}"]);
         $active = $conn->prepare(
@@ -816,8 +753,8 @@ $conn = null;
         $insert = $conn->prepare(
             "INSERT INTO public.queue_tickets
                 (ticket_number, lane, student_name, student_id, course, address, year_level,
-                 transaction_type, payment_method, payment_period, payment_percentage, discount, notes, status, service_date)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?)
+                 transaction_type, payment_description, payment_period, notes, status, service_date)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?)
              RETURNING ticket_id"
         );
         $insert->execute([
@@ -831,8 +768,6 @@ $conn = null;
             $service,
             $payment,
             $paymentPeriod,
-            $paymentPercentage,
-            $discount,
             $notes,
             $today,
         ]);
@@ -899,7 +834,7 @@ $conn = null;
         $dailyLock->execute(["daily-operations:$today"]);
         $current = $conn->prepare(
             "SELECT ticket_id, ticket_number, student_id, student_name, course, year_level,
-                    transaction_type, payment_method, payment_percentage
+                    transaction_type, payment_description, payment_period
              FROM public.queue_tickets
              WHERE ticket_id = ? AND service_date = ? AND status = 'serving'
              FOR UPDATE"
@@ -912,66 +847,20 @@ $conn = null;
         }
 
         if ($status === 'completed' && $ticket['transaction_type'] === 'Tuition Payment') {
-            $profile = $conn->prepare(
-                'SELECT current_balance FROM public.student_profiles WHERE student_number = ? LIMIT 1'
+            $paymentActivityRecord = $conn->prepare(
+                "INSERT INTO public.payment_activity_records
+                    (reference_number, student_id, student_name, course, year_level,
+                     payment_description, cashier_staff, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'recorded')"
             );
-            $profile->execute([$ticket['student_id']]);
-            $studentProfile = $profile->fetch();
-            if (!$studentProfile) {
-                $conn->rollBack();
-                respond(409, ['success' => false, 'message' => 'Student profile is no longer available; payment was not recorded.']);
-            }
-
-            $paymentMethod = (string) $ticket['payment_method'];
-            $customPercentage = trim((string) ($ticket['payment_percentage'] ?? ''));
-            if ($customPercentage !== '') {
-                if (!preg_match('/^(\d+(?:\.\d+)?)%?$/D', $customPercentage, $matches)) {
-                    $conn->rollBack();
-                    respond(409, ['success' => false, 'message' => 'The ticket has an invalid payment percentage; payment was not recorded.']);
-                }
-                $percentage = (float) $matches[1];
-            } else {
-                $percentage = match ($paymentMethod) {
-                    'Full Payment' => 100.0,
-                    'Partial Payment (50%)' => 50.0,
-                    'Partial Payment (25%)' => 25.0,
-                    'Promissory Note', 'Promissory' => 0.0,
-                    default => null,
-                };
-            }
-
-            if ($percentage === null || $percentage < 0 || $percentage > 100) {
-                $conn->rollBack();
-                respond(409, ['success' => false, 'message' => 'The ticket has no valid payment percentage; payment was not recorded.']);
-            }
-
-            if (!is_numeric($studentProfile['current_balance']) || (float) $studentProfile['current_balance'] < 0) {
-                $conn->rollBack();
-                respond(409, ['success' => false, 'message' => 'The student profile has an invalid balance; payment was not recorded.']);
-            }
-
-            $amountPaid = round((float) $studentProfile['current_balance'] * $percentage / 100, 2);
-            $history = $conn->prepare(
-                'INSERT INTO public.payment_activity_records (reference_number, student_id, amount_paid)
-                 VALUES (?, ?, ?)'
-            );
-            $history->execute([$ticket['ticket_number'], $ticket['student_id'], $amountPaid]);
-            $cashierHistory = $conn->prepare(
-                "INSERT INTO public.payment_histories
-                    (reference_number, student_id, student_name, course, year_level, amount_paid,
-                     payment_method, cashier_staff, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            );
-            $cashierHistory->execute([
+            $paymentActivityRecord->execute([
                 $ticket['ticket_number'],
                 $ticket['student_id'],
                 $ticket['student_name'],
                 $ticket['course'],
                 $ticket['year_level'],
-                $amountPaid,
-                $paymentMethod,
+                $ticket['payment_description'] . ($ticket['payment_period'] ? ' / ' . $ticket['payment_period'] : ''),
                 (string) ($_SESSION['identity']['staff_id'] ?? 'Cashier'),
-                $amountPaid > 0 ? 'paid' : 'pending',
             ]);
         }
 

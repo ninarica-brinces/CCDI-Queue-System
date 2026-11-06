@@ -24,10 +24,11 @@ API returns HTTP 500 for uncaught connection or query errors and logs detailed
 diagnostics under the included request ID.
 
 Before deploying, apply the database schema for the existing queue tables.
-Then run [`payment_histories.sql`](./payment_histories.sql) in the Supabase SQL
-Editor. This creates the durable cashier payment ledger and imports existing
-`payment_activity_records` where possible. API failures include a request ID
-that can be matched with Render logs.
+Then run [`payment_activity_records.sql`](./payment_activity_records.sql) in
+the Supabase SQL Editor. This aligns the payment activity ledger, migrates
+legacy non-monetary activity details into the canonical table, and removes
+monetary/payment-calculation columns and the legacy history table. API failures
+include a request ID that can be matched with Render logs.
 
 `index.html` redirects to the student portal in `student.html`; the cashier
 terminal is in `cashier.html` and uses `app.js`. Both call the same relative
@@ -42,18 +43,17 @@ requests, a CSRF token, and sign-in. Student sign-in requires a case-insensitive
 trimmed Student ID and registered full-name match. Sessions use HttpOnly,
 SameSite cookies and expire after 30 minutes of inactivity.
 
-Queue requests and their requested payment details are stored in
-`queue_tickets`; cashier completion records tuition payments in both
-`payment_activity_records` and `payment_histories` using the ticket number as
-the reference. The payment-history insert shares the completion transaction,
-so queue completion and the permanent audit record succeed or fail together.
-The history ledger stores student/course, payment method, cashier, amount, and
-timestamp snapshots; daily queue reset does not delete it. The cashier payment
-history view reads from this table and supports search, status/date filters,
-pagination, and CSV export. The amount is calculated from
-`student_profiles.current_balance` and the ticket's payment percentage.
-Resetting the operational day archives ticket and status totals in
-`daily_reports` before clearing that day's tickets; payment history remains
+Queue requests store the selected service, payment type, and period as activity
+descriptions. Completing a tuition-payment ticket records its reference,
+student/course, payment description, cashier, status, and timestamp in
+`payment_activity_records` within the same transaction as queue completion.
+It does not store monetary amounts, read student balances, or calculate
+collection or revenue totals. Daily queue reset does not delete payment
+activity records. The cashier view supports search, status/date filters,
+pagination, all-time and daily activity counts, a seven-day activity-count
+chart, and the active queue count. Resetting the operational day
+archives ticket and status totals in
+`daily_reports` before clearing that day's tickets; payment activity remains
 available across resets.
 The API accepts `complete_ticket` as the completion-specific action as well as
 `update_status` with a terminal status. Unauthenticated `student_login` and

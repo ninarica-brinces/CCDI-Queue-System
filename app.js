@@ -3,10 +3,10 @@ import { QueueManager } from './queueManager.js';
 
 let elements = {};
 let queueManager;
-let paymentHistoryPage = 1;
-let paymentHistoryRequestId = 0;
-let paymentHistorySearchTimer;
-let paymentHistoryRefreshTimer;
+let paymentActivityRecordPage = 1;
+let paymentActivityRecordRequestId = 0;
+let paymentActivityRecordSearchTimer;
+let paymentActivityRecordRefreshTimer;
 
 function createSafeElement(tag, className, textContent = '') {
   const el = document.createElement(tag);
@@ -22,9 +22,7 @@ function formatPaymentDetails(ticket) {
 
   const details = [
     ticket.payment,
-    ticket.paymentPeriod,
-    ticket.paymentPercentage,
-    ticket.discount && ticket.discount !== 'None' ? `Discount: ${ticket.discount}` : ''
+    ticket.paymentPeriod
   ];
   return details.filter(Boolean).join(' / ');
 }
@@ -87,7 +85,7 @@ function switchTab(targetPage, activeLink) {
 
 function renderUI(state) {
   renderQueuePage(state);
-  elements.historyActiveQueue.textContent =
+  elements.paymentActivityRecordActiveQueue.textContent =
     state.regularQueue.length + state.priorityQueue.length +
     Number(Boolean(state.currentRegular)) + Number(Boolean(state.currentPriority));
   renderReportsPage(state);
@@ -189,48 +187,13 @@ function renderTable(tbody, queue, emptyText) {
   });
 }
 
-function formatCurrency(value) {
-  return Number(value || 0).toLocaleString('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-}
-
-function renderSparkline(container, values) {
-  container.replaceChildren();
-  if (!values.length) return;
-
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 100 32');
-  svg.setAttribute('preserveAspectRatio', 'none');
-  svg.setAttribute('focusable', 'false');
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const spread = max - min || 1;
-  const points = values.map((value, index) => {
-    const x = values.length === 1 ? 50 : index * 100 / (values.length - 1);
-    const y = 28 - ((value - min) / spread) * 24;
-    return `${x},${y}`;
-  }).join(' ');
-  const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-  line.setAttribute('points', points);
-  line.setAttribute('fill', 'none');
-  line.setAttribute('stroke', 'currentColor');
-  line.setAttribute('stroke-width', '2');
-  line.setAttribute('vector-effect', 'non-scaling-stroke');
-  svg.appendChild(line);
-  container.appendChild(svg);
-}
-
 function renderPaymentActivity(activity) {
   const chart = elements.paymentActivityChart;
   chart.replaceChildren();
   const days = activity.slice(-7);
-  const peak = Math.max(...days.map(day => Number(day.revenue) || 0), 1);
-  const total = days.reduce((sum, day) => sum + (Number(day.revenue) || 0), 0);
-  elements.paymentActivitySummary.textContent = formatCurrency(total);
+  const peak = Math.max(...days.map(day => Number(day.records) || 0), 1);
+  const total = days.reduce((sum, day) => sum + (Number(day.records) || 0), 0);
+  elements.paymentActivitySummary.textContent = `${total.toLocaleString('en-PH')} records`;
 
   if (!days.length) {
     chart.appendChild(createSafeElement('p', 'payment-chart-empty', 'No payment activity in the last seven days.'));
@@ -238,28 +201,25 @@ function renderPaymentActivity(activity) {
 
   days.forEach(day => {
     const column = createSafeElement('div', 'payment-chart-column');
-    const amount = Number(day.revenue) || 0;
+    const records = Number(day.records) || 0;
     const bar = createSafeElement('div', 'payment-chart-bar');
-    bar.style.height = `${Math.max(amount > 0 ? 8 : 2, amount / peak * 100)}%`;
-    bar.title = `${day.activity_date}: ${formatCurrency(amount)}`;
-    bar.setAttribute('aria-label', `${day.activity_date}: ${formatCurrency(amount)}, ${day.transactions} transactions`);
+    bar.style.height = `${Math.max(records > 0 ? 8 : 2, records / peak * 100)}%`;
+    bar.title = `${day.activity_date}: ${records} records`;
+    bar.setAttribute('aria-label', `${day.activity_date}: ${records} payment activity records`);
     const label = createSafeElement('span', 'payment-chart-label', String(day.activity_date).slice(5));
     column.append(bar, label);
     chart.appendChild(column);
   });
 
-  renderSparkline(elements.paymentCollectionsSpark, days.map(day => Number(day.revenue) || 0));
-  renderSparkline(elements.paymentDailySpark, days.map(day => Number(day.revenue) || 0));
-  renderSparkline(elements.paymentTransactionsSpark, days.map(day => Number(day.transactions) || 0));
 }
 
-function renderPaymentHistoryRows(records) {
+function renderPaymentActivityRecordRows(records) {
   const tbody = elements.txTableBody;
   tbody.replaceChildren();
   if (!records.length) {
     const row = createSafeElement('tr');
-    row.appendChild(createSafeElement('td', 'empty-msg', 'No payment history matches these filters.'));
-    row.firstElementChild.colSpan = 9;
+    row.appendChild(createSafeElement('td', 'empty-msg', 'No payment activity records match these filters.'));
+    row.firstElementChild.colSpan = 8;
     tbody.appendChild(row);
     return;
   }
@@ -276,36 +236,34 @@ function renderPaymentHistoryRows(records) {
       record.student_id,
       record.student_name,
       courseYear,
-      formatCurrency(record.amount_paid),
-      record.payment_method,
+      record.payment_description,
       formattedDate,
       record.cashier_staff
     ];
     fields.forEach(value => row.appendChild(createSafeElement('td', '', value || '—')));
 
     const statusCell = createSafeElement('td');
-    const isPaid = record.status === 'paid';
+    const isRecorded = record.status === 'recorded';
     statusCell.appendChild(createSafeElement(
       'span',
-      `badge-status ${isPaid ? 'status-completed' : 'status-pending'}`,
-      isPaid ? 'Paid' : 'Pending'
+      `badge-status ${isRecorded ? 'status-completed' : 'status-waiting'}`,
+      record.status === 'recorded' ? 'Recorded' : record.status
     ));
     row.appendChild(statusCell);
     tbody.appendChild(row);
   });
 }
 
-async function fetchPaymentHistories({ exportAll = false } = {}) {
-  const requestId = ++paymentHistoryRequestId;
+async function fetchPaymentActivityRecords() {
+  const requestId = ++paymentActivityRecordRequestId;
   const params = new URLSearchParams({
-    action: 'get_cashier_payment_histories',
+    action: 'get_cashier_payment_activity_records',
     search: elements.txSearchInput.value.trim(),
     range: elements.txFilterRange.value,
     status: elements.txFilterStatus.value,
-    page: String(paymentHistoryPage)
+    page: String(paymentActivityRecordPage)
   });
-  if (exportAll) params.set('all', '1');
-  if (!exportAll) elements.paymentHistoryMessage.textContent = 'Loading payment history…';
+  elements.paymentActivityRecordMessage.textContent = 'Loading payment activity records…';
 
   try {
     const response = await fetch(`${APP_CONFIG.apiUrl}?${params}`, {
@@ -314,70 +272,35 @@ async function fetchPaymentHistories({ exportAll = false } = {}) {
     });
     const result = await response.json();
     if (!response.ok || !result.success || !Array.isArray(result.data)) {
-      throw new Error(result.message || 'Unable to load payment histories.');
+      throw new Error(result.message || 'Unable to load payment activity records.');
     }
+    if (requestId !== paymentActivityRecordRequestId) return;
 
-    if (exportAll) return result.data;
-    if (requestId !== paymentHistoryRequestId) return [];
-
-    elements.historyTotalCollections.textContent = formatCurrency(result.metrics.total_collections);
-    elements.historyTotalTransactions.textContent =
-      Number(result.metrics.total_transactions).toLocaleString('en-PH');
-    elements.historyDailyRevenue.textContent = formatCurrency(result.metrics.daily_revenue);
-    elements.historyActiveQueue.textContent =
+    elements.paymentActivityRecordTotalRecords.textContent =
+      Number(result.metrics.total_records).toLocaleString('en-PH');
+    elements.paymentActivityRecordTodayRecords.textContent =
+      Number(result.metrics.today_records).toLocaleString('en-PH');
+    elements.paymentActivityRecordActiveQueue.textContent =
       Number(result.metrics.active_queue_count).toLocaleString('en-PH');
     renderPaymentActivity(result.activity);
-    renderPaymentHistoryRows(result.data);
+    renderPaymentActivityRecordRows(result.data);
 
     const pagination = result.pagination;
-    paymentHistoryPage = pagination.page;
-    elements.paymentHistoryPageInfo.textContent =
+    paymentActivityRecordPage = pagination.page;
+    elements.paymentActivityRecordPageInfo.textContent =
       `Page ${pagination.page} of ${pagination.pages} · ${pagination.total.toLocaleString('en-PH')} records`;
-    elements.paymentHistoryPrevious.disabled = pagination.page <= 1;
-    elements.paymentHistoryNext.disabled = pagination.page >= pagination.pages;
-    elements.paymentHistoryMessage.textContent =
+    elements.paymentActivityRecordPrevious.disabled = pagination.page <= 1;
+    elements.paymentActivityRecordNext.disabled = pagination.page >= pagination.pages;
+    elements.paymentActivityRecordMessage.textContent =
       pagination.total === 0 ? 'No records found.' : `${pagination.total.toLocaleString('en-PH')} matching records`;
-    return result.data;
   } catch (error) {
-    if (exportAll) throw error;
-    if (requestId !== paymentHistoryRequestId) return [];
-    console.error('Failed to load payment histories:', error);
-    elements.paymentHistoryMessage.textContent = error.message || 'Unable to load payment histories.';
-    renderPaymentHistoryRows([]);
+    if (requestId !== paymentActivityRecordRequestId) return;
+    console.error('Failed to load payment activity records:', error);
+    elements.paymentActivityRecordMessage.textContent = error.message || 'Unable to load payment activity records.';
+    renderPaymentActivityRecordRows([]);
     elements.txTableBody.firstElementChild.firstElementChild.textContent =
-      'Payment history is unavailable. Check the database migration and try again.';
-    return [];
+      'Payment Activity Record is unavailable. Check the database migration and try again.';
   }
-}
-
-function exportPaymentHistoryCsv(records) {
-  const headers = [
-    'Transaction / Ref', 'Student ID', 'Student Name', 'Course / Year',
-    'Amount Paid', 'Payment Method', 'Date & Time', 'Cashier Staff', 'Status'
-  ];
-  const rows = records.map(record => [
-    record.reference_number,
-    record.student_id,
-    record.student_name,
-    [record.course, record.year_level].filter(Boolean).join(' / '),
-    Number(record.amount_paid || 0).toFixed(2),
-    record.payment_method,
-    record.created_at,
-    record.cashier_staff,
-    record.status
-  ]);
-  const csvValue = value => {
-    let text = String(value ?? '');
-    if (/^[=+\-@]/.test(text)) text = `'${text}`;
-    return `"${text.replace(/"/g, '""')}"`;
-  };
-  const csv = [headers, ...rows].map(row => row.map(csvValue).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' }));
-  const link = createSafeElement('a');
-  link.href = url;
-  link.download = `ccdi-payment-histories-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function renderReportsPage(state) {
@@ -484,10 +407,10 @@ function bindEvents() {
     switchTab(elements.pageQueue, elements.navQueue);
   });
 
-  elements.navPaymentHistories.addEventListener('click', (e) => {
+  elements.navPaymentActivityRecord.addEventListener('click', (e) => {
     e.preventDefault();
-    switchTab(elements.pagePaymentHistories, elements.navPaymentHistories);
-    fetchPaymentHistories();
+    switchTab(elements.pagePaymentActivityRecord, elements.navPaymentActivityRecord);
+    fetchPaymentActivityRecords();
   });
 
   elements.navReports.addEventListener('click', (e) => {
@@ -496,48 +419,28 @@ function bindEvents() {
   });
 
   elements.txSearchInput.addEventListener('input', () => {
-    clearTimeout(paymentHistorySearchTimer);
-    paymentHistorySearchTimer = setTimeout(() => {
-      paymentHistoryPage = 1;
-      fetchPaymentHistories();
+    clearTimeout(paymentActivityRecordSearchTimer);
+    paymentActivityRecordSearchTimer = setTimeout(() => {
+      paymentActivityRecordPage = 1;
+      fetchPaymentActivityRecords();
     }, 250);
   });
   [elements.txFilterRange, elements.txFilterStatus].forEach(filter => {
     filter.addEventListener('change', () => {
-      paymentHistoryPage = 1;
-      fetchPaymentHistories();
+      paymentActivityRecordPage = 1;
+      fetchPaymentActivityRecords();
     });
   });
-  elements.paymentHistoryPrevious.addEventListener('click', () => {
-    paymentHistoryPage = Math.max(1, paymentHistoryPage - 1);
-    fetchPaymentHistories();
+  elements.paymentActivityRecordPrevious.addEventListener('click', () => {
+    paymentActivityRecordPage = Math.max(1, paymentActivityRecordPage - 1);
+    fetchPaymentActivityRecords();
   });
-  elements.paymentHistoryNext.addEventListener('click', () => {
-    paymentHistoryPage++;
-    fetchPaymentHistories();
+  elements.paymentActivityRecordNext.addEventListener('click', () => {
+    paymentActivityRecordPage++;
+    fetchPaymentActivityRecords();
   });
-  elements.paymentExportBtn.addEventListener('click', async () => {
-    elements.paymentExportBtn.disabled = true;
-    try {
-      const records = await fetchPaymentHistories({ exportAll: true });
-      if (records.length === 0) {
-        elements.paymentHistoryMessage.textContent = 'There are no matching records to export.';
-        return;
-      }
-      exportPaymentHistoryCsv(records);
-      elements.paymentHistoryMessage.textContent = `${records.length.toLocaleString('en-PH')} records exported.`;
-    } catch (error) {
-      elements.paymentHistoryMessage.textContent = error.message || 'Unable to export payment histories.';
-    } finally {
-      elements.paymentExportBtn.disabled = false;
-    }
-  });
-
   elements.openModalBtn.addEventListener('click', () => elements.dialog.showModal());
   elements.serviceTypeSelect.addEventListener('change', updateTuitionFields);
-  // Spec 3: live payment breakdown on amount input
-  elements.customDiscountInput.addEventListener('input', updateCashierPayBreakdown);
-
   const closeModal = () => elements.dialog.close();
   elements.closeModalBtn.addEventListener('click', closeModal);
   elements.closeModalCross.addEventListener('click', closeModal);
@@ -545,17 +448,10 @@ function bindEvents() {
   elements.ticketForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const studentName = elements.studentNameInput.value.trim().replace(/\s+/g, ' ');
-    const customValue = elements.customDiscountInput.value.trim();
 
     const studentId = elements.studentIdInput.value.trim();
     if (!studentName || !studentId) {
       alert('Enter both the Student ID and full name shown in the active CCDI student record.');
-      return;
-    }
-
-    const isPercentage = customValue.includes('%');
-    if (isPercentage && customValue.length > 32) {
-      alert('Custom percentages must be 32 characters or fewer.');
       return;
     }
 
@@ -566,10 +462,7 @@ function bindEvents() {
       studentName: studentName,
       service: elements.serviceTypeSelect.value,
       payment: isTuitionPayment ? elements.paymentTypeSelect.value : 'N/A (Document Only)',
-      paymentPeriod: isTuitionPayment ? elements.paymentPeriodSelect.value : '',
-      paymentPercentage: isTuitionPayment && isPercentage ? customValue : '',
-      discount: isTuitionPayment && customValue && !isPercentage ? customValue : '',
-      customAmount: isTuitionPayment && customValue && !isPercentage ? parseFloat(customValue) || 0 : 0
+      paymentPeriod: isTuitionPayment ? elements.paymentPeriodSelect.value : ''
     });
     if (!created) return;
     elements.ticketForm.reset();
@@ -579,7 +472,7 @@ function bindEvents() {
   elements.btnRegNext.addEventListener('click', async () => await queueManager.callNext('Regular'));
   elements.btnRegComplete.addEventListener('click', async () => {
     await queueManager.completeCurrent('Regular');
-    await fetchPaymentHistories();
+    await fetchPaymentActivityRecords();
   });
   elements.btnRegSkip.addEventListener('click', async () => await queueManager.skipCurrent('Regular'));
   elements.btnRegRecall.addEventListener('click', async () => {
@@ -597,7 +490,7 @@ function bindEvents() {
   elements.btnPrioNext.addEventListener('click', async () => await queueManager.callNext('Priority'));
   elements.btnPrioComplete.addEventListener('click', async () => {
     await queueManager.completeCurrent('Priority');
-    await fetchPaymentHistories();
+    await fetchPaymentActivityRecords();
   });
   elements.btnPrioSkip.addEventListener('click', async () => await queueManager.skipCurrent('Priority'));
   elements.btnPrioRecall.addEventListener('click', async () => {
@@ -613,12 +506,12 @@ function bindEvents() {
   });
 
   elements.resetSystemBtn.addEventListener('click', async () => {
-    if (!window.confirm("Are you sure you want to reset the queue? This will archive today's history.")) {
+    if (!window.confirm("Are you sure you want to reset the queue? This will archive today's queue records.")) {
       return;
     }
     try {
       await queueManager.resetDay();
-      await fetchPaymentHistories();
+      await fetchPaymentActivityRecords();
       alert('Operational day reset. The daily report was archived successfully.');
     } catch (error) {
       alert(error.message);
@@ -629,31 +522,26 @@ function bindEvents() {
 function init() {
   elements = {
     navQueue: document.getElementById('navQueue'),
-    navPaymentHistories: document.getElementById('navPaymentHistories'),
+    navPaymentActivityRecord: document.getElementById('navPaymentActivityRecord'),
     navReports: document.getElementById('navReports'),
 
     pageQueue: document.getElementById('pageQueue'),
-    pagePaymentHistories: document.getElementById('pagePaymentHistories'),
+    pagePaymentActivityRecord: document.getElementById('pagePaymentActivityRecord'),
     pageReports: document.getElementById('pageReports'),
 
     txSearchInput: document.getElementById('txSearchInput'),
     txFilterStatus: document.getElementById('txFilterStatus'),
     txFilterRange: document.getElementById('txFilterRange'),
     txTableBody: document.getElementById('txTableBody'),
-    historyTotalCollections: document.getElementById('historyTotalCollections'),
-    historyTotalTransactions: document.getElementById('historyTotalTransactions'),
-    historyDailyRevenue: document.getElementById('historyDailyRevenue'),
-    historyActiveQueue: document.getElementById('historyActiveQueue'),
-    paymentCollectionsSpark: document.getElementById('paymentCollectionsSpark'),
-    paymentTransactionsSpark: document.getElementById('paymentTransactionsSpark'),
-    paymentDailySpark: document.getElementById('paymentDailySpark'),
+    paymentActivityRecordTotalRecords: document.getElementById('paymentActivityRecordTotalRecords'),
+    paymentActivityRecordTodayRecords: document.getElementById('paymentActivityRecordTodayRecords'),
+    paymentActivityRecordActiveQueue: document.getElementById('paymentActivityRecordActiveQueue'),
     paymentActivityChart: document.getElementById('paymentActivityChart'),
     paymentActivitySummary: document.getElementById('paymentActivitySummary'),
-    paymentHistoryMessage: document.getElementById('paymentHistoryMessage'),
-    paymentHistoryPageInfo: document.getElementById('paymentHistoryPageInfo'),
-    paymentHistoryPrevious: document.getElementById('paymentHistoryPrevious'),
-    paymentHistoryNext: document.getElementById('paymentHistoryNext'),
-    paymentExportBtn: document.getElementById('paymentExportBtn'),
+    paymentActivityRecordMessage: document.getElementById('paymentActivityRecordMessage'),
+    paymentActivityRecordPageInfo: document.getElementById('paymentActivityRecordPageInfo'),
+    paymentActivityRecordPrevious: document.getElementById('paymentActivityRecordPrevious'),
+    paymentActivityRecordNext: document.getElementById('paymentActivityRecordNext'),
     paymentSummary: document.getElementById('paymentSummary'),
 
     rptTotalTickets: document.getElementById('rptTotalTickets'),
@@ -674,7 +562,6 @@ function init() {
 
     studentNameInput: document.getElementById('studentName'),
     studentIdInput: document.getElementById('studentId'),
-    customDiscountInput: document.getElementById('customDiscount'),
     tuitionPaymentFields: document.getElementById('tuitionPaymentFields'),
 
     cashierLoginDialog: document.getElementById('cashierLoginDialog'),
@@ -728,32 +615,7 @@ function updateTuitionFields() {
   if (!isTuition) {
     elements.paymentTypeSelect.value = 'N/A (Document Only)';
     elements.paymentPeriodSelect.value = '';
-    elements.customDiscountInput.value = '';
-    const breakdown = document.getElementById('cashierPayBreakdown');
-    if (breakdown) breakdown.style.display = 'none';
   }
-}
-
-// --- Spec 3: Live payment breakdown recalculation for cashier ---
-let cashierStudentBalance = 0;
-
-function updateCashierPayBreakdown() {
-  const breakdown = document.getElementById('cashierPayBreakdown');
-  if (!breakdown) return;
-  const rawVal = parseFloat(elements.customDiscountInput.value);
-  if (!rawVal || rawVal <= 0 || elements.serviceTypeSelect.value !== 'Tuition Payment') {
-    breakdown.style.display = 'none';
-    return;
-  }
-  const remaining = cashierStudentBalance > 0 ? Math.max(0, cashierStudentBalance - rawVal) : 0;
-  const pct = cashierStudentBalance > 0
-    ? Math.min(100, (rawVal / cashierStudentBalance) * 100).toFixed(1) + '%'
-    : 'Custom Amount';
-  const fmt = n => `\u20B1${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  document.getElementById('cpAmountPay').textContent = fmt(rawVal);
-  document.getElementById('cpRemaining').textContent = fmt(remaining);
-  document.getElementById('cpPercent').textContent = pct;
-  breakdown.style.display = 'block';
 }
 
 async function restoreCashierSession() {
@@ -788,10 +650,10 @@ async function startCashierSession(csrfToken) {
     const statusElement = document.getElementById('storageStatus');
     if (statusElement) statusElement.textContent = status;
   });
-  paymentHistoryPage = 1;
-  fetchPaymentHistories();
-  clearInterval(paymentHistoryRefreshTimer);
-  paymentHistoryRefreshTimer = setInterval(fetchPaymentHistories, 30000);
+  paymentActivityRecordPage = 1;
+  fetchPaymentActivityRecords();
+  clearInterval(paymentActivityRecordRefreshTimer);
+  paymentActivityRecordRefreshTimer = setInterval(fetchPaymentActivityRecords, 30000);
 }
 
 document.addEventListener('DOMContentLoaded', init);

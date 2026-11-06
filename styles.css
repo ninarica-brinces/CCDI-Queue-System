@@ -488,11 +488,6 @@ td {
   color: #0B6A0B;
 }
 
-.status-pending {
-  background: #FFF4CE;
-  color: #8A6A00;
-}
-
 .status-skipped {
   background: #FDE7E9;
   color: #A4262C;
@@ -578,7 +573,7 @@ td {
 
 .payment-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 16px;
 }
@@ -593,8 +588,8 @@ td {
 
 .payment-metric-heading,
 .payment-metric-footer,
-.payment-history-heading,
-.payment-history-pagination {
+.payment-activity-record-heading,
+.payment-activity-record-pagination {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -626,38 +621,8 @@ td {
   font-size: 11px;
 }
 
-.payment-sparkline {
-  width: 76px;
-  height: 26px;
-  flex: 0 0 76px;
-  color: var(--primary);
-}
-
-.payment-sparkline svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.payment-live-indicator {
-  color: var(--success);
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.payment-live-indicator::before {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 5px;
-  border-radius: 50%;
-  background: var(--success);
-  content: "";
-}
-
 .payment-activity-card,
-.payment-history-card {
+.payment-activity-record-card {
   margin-bottom: 16px;
 }
 
@@ -727,11 +692,11 @@ td {
   font-size: 11px;
 }
 
-.payment-history-heading {
+.payment-activity-record-heading {
   margin-bottom: 14px;
 }
 
-.payment-history-toolbar {
+.payment-activity-record-toolbar {
   align-items: center;
   flex-wrap: wrap;
 }
@@ -743,52 +708,47 @@ td {
   font-weight: 600;
 }
 
-.payment-history-toolbar .search-input {
+.payment-activity-record-toolbar .search-input {
   flex: 1 1 220px;
 }
 
-.payment-history-toolbar .filter-select {
+.payment-activity-record-toolbar .filter-select {
   min-width: 130px;
 }
 
-.payment-history-message {
+.payment-activity-record-message {
   min-height: 18px;
   margin: 0 0 8px;
   color: var(--muted);
   font-size: 12px;
 }
 
-.payment-history-table-wrap {
+.payment-activity-record-table-wrap {
   width: 100%;
   overflow-x: auto;
 }
 
-.payment-history-table {
-  min-width: 1050px;
+.payment-activity-record-table {
+  min-width: 900px;
 }
 
-.payment-history-table td:nth-child(1),
-.payment-history-table td:nth-child(2) {
+.payment-activity-record-table td:nth-child(1),
+.payment-activity-record-table td:nth-child(2) {
   font-weight: 600;
 }
 
-.payment-history-table td:nth-child(5) {
-  font-variant-numeric: tabular-nums;
-  font-weight: 650;
-}
-
-.payment-history-pagination {
+.payment-activity-record-pagination {
   margin-top: 14px;
   color: var(--muted);
   font-size: 12px;
 }
 
-.payment-history-pagination > div {
+.payment-activity-record-pagination > div {
   display: flex;
   gap: 8px;
 }
 
-.payment-history-pagination .btn {
+.payment-activity-record-pagination .btn {
   min-height: 34px;
   padding: 6px 12px;
 }
@@ -1119,7 +1079,7 @@ td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .payment-history-toolbar {
+  .payment-activity-record-toolbar {
     align-items: stretch;
   }
 
@@ -1128,8 +1088,8 @@ td {
     flex: 1 0 100%;
   }
 
-  .payment-history-toolbar .search-input,
-  .payment-history-toolbar .filter-select {
+  .payment-activity-record-toolbar .search-input,
+  .payment-activity-record-toolbar .filter-select {
     width: 100%;
   }
 
@@ -1164,7 +1124,7 @@ td {
     grid-template-columns: 1fr;
   }
 
-  .payment-history-heading {
+  .payment-activity-record-heading {
     align-items: flex-start;
     flex-direction: column;
   }

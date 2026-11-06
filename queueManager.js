@@ -98,10 +98,8 @@ export class QueueManager {
         address: ticket.address || '',
         yearLevel: ticket.year_level || '',
         service: ticket.transaction_type || '',
-        payment: ticket.payment_method || '',
+        payment: ticket.payment_description || '',
         paymentPeriod: ticket.payment_period || '',
-        paymentPercentage: ticket.payment_percentage || '',
-        discount: ticket.discount || '',
         recallCount: Number(ticket.recall_count) || 0,
         notes: ticket.notes || '',
         status: ticket.status,
@@ -165,9 +163,7 @@ export class QueueManager {
     studentName,
     service,
     payment,
-    paymentPeriod,
-    paymentPercentage,
-    discount
+    paymentPeriod
   }) {
     try {
       const normalizedStudentId = String(studentId ?? '').trim();
@@ -182,10 +178,7 @@ export class QueueManager {
           studentName: normalizedStudentName,
           service,
           payment,
-          paymentPeriod,
-          paymentPercentage,
-          discount,
-          customAmount
+          paymentPeriod
         })
       });
       const result = await response.json();

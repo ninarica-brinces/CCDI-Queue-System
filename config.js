@@ -13,9 +13,7 @@ export const APP_CONFIG = {
   ],
   paymentOptions: [
     { id: 'full', label: 'Full Payment' },
-    { id: 'partial_custom', label: 'Partial Payment (Custom Amount)' },
-    { id: 'partial_50', label: 'Partial Payment (50%)' },
-    { id: 'partial_25', label: 'Partial Payment (25%)' },
+    { id: 'partial', label: 'Partial Payment' },
     { id: 'promissory', label: 'Promissory Note' },
     { id: 'none', label: 'N/A (Document Only)' }
   ],

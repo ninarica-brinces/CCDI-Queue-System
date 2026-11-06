@@ -25,7 +25,7 @@
             <a href="#" id="navQueue" class="nav-link active" aria-current="page"><i class="fa-solid fa-users-line"></i> Queue Management</a>
           </li>
           <li class="nav-item">
-            <a href="#" id="navPaymentHistories" class="nav-link"><i class="fa-solid fa-receipt"></i> Payment Histories</a>
+            <a href="#" id="navPaymentActivityRecord" class="nav-link"><i class="fa-solid fa-receipt"></i> Payment Activity Record</a>
           </li>
           <li class="nav-item">
             <a href="#" id="navReports" class="nav-link"><i class="fa-solid fa-chart-column"></i> Transaction Log</a>
@@ -168,58 +168,52 @@
       </div>
     </div>
 
-    <!-- PAGE 2: PAYMENT HISTORIES -->
-    <div id="pagePaymentHistories" class="page-view">
+    <!-- PAGE 2: PAYMENT ACTIVITY RECORD -->
+    <div id="pagePaymentActivityRecord" class="page-view">
       <header>
         <div class="header-left">
-          <h1 class="header-title">Payment Histories &amp; Transaction Records</h1>
+          <h1 class="header-title">Payment Activity Record</h1>
         </div>
       </header>
       <div class="container">
-        <section class="payment-metrics-grid" aria-label="Payment summary">
+        <section class="payment-metrics-grid" aria-label="Payment activity metrics">
           <article class="card payment-metric-card">
-            <div class="payment-metric-heading"><span>Total Collections</span><i class="fa-solid fa-wallet" aria-hidden="true"></i></div>
-            <strong class="payment-metric-value" id="historyTotalCollections">₱0.00</strong>
-            <div class="payment-metric-footer"><span>Recorded paid transactions</span><span id="paymentCollectionsSpark" class="payment-sparkline" aria-hidden="true"></span></div>
+            <div class="payment-metric-heading"><span>Total Payment Records</span><i class="fa-solid fa-receipt" aria-hidden="true"></i></div>
+            <strong class="payment-metric-value" id="paymentActivityRecordTotalRecords">0</strong>
+            <div class="payment-metric-footer"><span>All-time logged payment activities</span></div>
           </article>
           <article class="card payment-metric-card">
-            <div class="payment-metric-heading"><span>Total Transactions</span><i class="fa-solid fa-receipt" aria-hidden="true"></i></div>
-            <strong class="payment-metric-value" id="historyTotalTransactions">0</strong>
-            <div class="payment-metric-footer"><span>All-time payment records</span><span id="paymentTransactionsSpark" class="payment-sparkline" aria-hidden="true"></span></div>
-          </article>
-          <article class="card payment-metric-card">
-            <div class="payment-metric-heading"><span>Today's Revenue</span><i class="fa-solid fa-chart-line" aria-hidden="true"></i></div>
-            <strong class="payment-metric-value" id="historyDailyRevenue">₱0.00</strong>
-            <div class="payment-metric-footer"><span>Payments recorded today</span><span id="paymentDailySpark" class="payment-sparkline" aria-hidden="true"></span></div>
+            <div class="payment-metric-heading"><span>Payments Recorded Today</span><i class="fa-solid fa-calendar-check" aria-hidden="true"></i></div>
+            <strong class="payment-metric-value" id="paymentActivityRecordTodayRecords">0</strong>
+            <div class="payment-metric-footer"><span>Payment activities logged today</span></div>
           </article>
           <article class="card payment-metric-card">
             <div class="payment-metric-heading"><span>Active Queue</span><i class="fa-solid fa-users-line" aria-hidden="true"></i></div>
-            <strong class="payment-metric-value" id="historyActiveQueue">0</strong>
-            <div class="payment-metric-footer"><span>Waiting or being served</span><span class="payment-live-indicator">Live</span></div>
+            <strong class="payment-metric-value" id="paymentActivityRecordActiveQueue">0</strong>
+            <div class="payment-metric-footer"><span>Waiting or being served</span></div>
           </article>
         </section>
 
         <section class="card payment-activity-card" aria-labelledby="paymentActivityTitle">
           <div class="card-header">
             <div>
-              <h2 class="card-title" id="paymentActivityTitle">Payment Activity</h2>
-              <p class="payment-activity-subtitle">Daily collections over the last seven days</p>
+              <h2 class="card-title" id="paymentActivityTitle">Daily Payment Records</h2>
+              <p class="payment-activity-subtitle">Recorded payment activities over the last seven days</p>
             </div>
-            <span id="paymentActivitySummary" class="payment-activity-total">₱0.00</span>
+            <span id="paymentActivitySummary" class="payment-activity-total">0 records</span>
           </div>
-          <div id="paymentActivityChart" class="payment-activity-chart" role="img" aria-label="Daily payment collection chart"></div>
+          <div id="paymentActivityChart" class="payment-activity-chart" role="img" aria-label="Daily payment activity counts"></div>
         </section>
 
-        <section class="card payment-history-card" aria-labelledby="paymentHistoryTitle">
-          <div class="card-header payment-history-heading">
+        <section class="card payment-activity-record-card" aria-labelledby="paymentActivityRecordTitle">
+          <div class="card-header payment-activity-record-heading">
             <div>
-              <h2 class="card-title" id="paymentHistoryTitle">Recent Transactions</h2>
-              <p class="payment-activity-subtitle">Persistent payment records, including archived queue days</p>
+              <h2 class="card-title" id="paymentActivityRecordTitle">Recent Payment Activity Records</h2>
+              <p class="payment-activity-subtitle">Recorded payment activities, including archived queue days</p>
             </div>
-            <button type="button" id="paymentExportBtn" class="btn btn-secondary"><i class="fa-solid fa-download" aria-hidden="true"></i> Export CSV</button>
           </div>
-          <div class="toolbar payment-history-toolbar">
-            <label class="payment-search-label" for="txSearchInput">Search transactions</label>
+          <div class="toolbar payment-activity-record-toolbar">
+            <label class="payment-search-label" for="txSearchInput">Search records</label>
             <input type="search" id="txSearchInput" class="search-input" placeholder="Reference, student, course, or cashier..." maxlength="120" autocomplete="off">
             <label class="payment-filter-label" for="txFilterRange">Date range</label>
             <select id="txFilterRange" class="filter-select" aria-label="Filter by date range">
@@ -231,36 +225,34 @@
             <label class="payment-filter-label" for="txFilterStatus">Status</label>
             <select id="txFilterStatus" class="filter-select" aria-label="Filter by payment status">
               <option value="all">All statuses</option>
-              <option value="paid">Paid</option>
-              <option value="pending">Pending</option>
+              <option value="recorded">Recorded</option>
             </select>
           </div>
-          <p id="paymentHistoryMessage" class="payment-history-message" role="status" aria-live="polite"></p>
-          <div class="payment-history-table-wrap">
-            <table class="payment-history-table">
+          <p id="paymentActivityRecordMessage" class="payment-activity-record-message" role="status" aria-live="polite"></p>
+          <div class="payment-activity-record-table-wrap">
+            <table class="payment-activity-record-table">
               <thead>
                 <tr>
-                  <th scope="col">Transaction / Ref</th>
+                  <th scope="col">Transaction Reference</th>
                   <th scope="col">Student ID</th>
                   <th scope="col">Student Name</th>
                   <th scope="col">Course / Year</th>
-                  <th scope="col">Amount Paid</th>
-                  <th scope="col">Payment Method</th>
-                  <th scope="col">Date &amp; Time</th>
+                  <th scope="col">Payment Type or Transaction Description</th>
+                  <th scope="col">Date and Time</th>
                   <th scope="col">Cashier Staff</th>
                   <th scope="col">Status</th>
                 </tr>
               </thead>
               <tbody id="txTableBody">
-                <tr><td class="empty-msg" colspan="9">Payment history will load after cashier sign-in.</td></tr>
+                <tr><td class="empty-msg" colspan="8">Payment activity records will load after cashier sign-in.</td></tr>
               </tbody>
             </table>
           </div>
-          <div class="payment-history-pagination">
-            <span id="paymentHistoryPageInfo" aria-live="polite">Page 1 of 1</span>
+          <div class="payment-activity-record-pagination">
+            <span id="paymentActivityRecordPageInfo" aria-live="polite">Page 1 of 1</span>
             <div>
-              <button type="button" id="paymentHistoryPrevious" class="btn btn-secondary" disabled>Previous</button>
-              <button type="button" id="paymentHistoryNext" class="btn btn-secondary" disabled>Next</button>
+              <button type="button" id="paymentActivityRecordPrevious" class="btn btn-secondary" disabled>Previous</button>
+              <button type="button" id="paymentActivityRecordNext" class="btn btn-secondary" disabled>Next</button>
             </div>
           </div>
         </section>
@@ -333,7 +325,7 @@
     </footer>
   </main>
 
-  <!-- Accessible ticket dialog with student authorization lookup and custom discount input -->
+  <!-- Accessible ticket dialog with student authorization lookup -->
   <dialog id="ticketDialog" class="modal">
     <div class="modal-content">
       <header class="modal-header">
@@ -367,18 +359,6 @@
           <div class="form-group">
             <label for="paymentPeriod">Payment Period</label>
             <select id="paymentPeriod" name="paymentPeriod"></select>
-          </div>
-          <div class="form-group">
-            <label for="customDiscount">Custom Payment Amount (PHP)</label>
-            <input type="number" id="customDiscount" name="customDiscount"
-              placeholder="Enter exact amount in PHP, e.g. 2500.00" min="0" step="0.01">
-            <!-- Live payment breakdown (Spec 3) -->
-            <div id="cashierPayBreakdown" style="display:none; margin-top:0.5rem; padding:0.5rem 0.75rem;
-              background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; font-size:0.8rem; line-height:1.7;">
-              <div>Amount to Pay: <strong id="cpAmountPay">₱0.00</strong></div>
-              <div>Remaining Balance: <strong id="cpRemaining">₱0.00</strong></div>
-              <div>Payment %: <strong id="cpPercent">0%</strong></div>
-            </div>
           </div>
         </div>
         <footer class="modal-actions">

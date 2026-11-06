@@ -10,16 +10,19 @@
       display: flex;
       flex-direction: column;
       min-height: 100vh;
+      margin: 0;
       overflow-x: hidden;
       overflow-y: auto;
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #3b82f6 100%) !important;
     }
 
     main {
       align-items: center;
-      background: #fff;
+      background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%) !important;
+      color: #ffffff !important;
+      border: 1px solid rgba(255, 255, 255, 0.15) !important;
       border-radius: 12px;
-      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.1);
-      color: #1e293b;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4) !important;
       display: flex;
       flex: 1;
       flex-direction: column;
@@ -30,12 +33,21 @@
       margin: 2rem auto;
       padding: 2.5rem;
       text-align: center;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
       width: calc(100% - 2rem);
     }
 
+    main:hover {
+      transform: scale(1.02);
+    }
+
     main h1 {
-      color: #1d4ed8;
+      color: #ffffff !important;
       margin-top: 0;
+    }
+
+    main > p {
+      color: #94a3b8 !important;
     }
 
     body > header {
@@ -145,10 +157,18 @@
       font-weight: 600;
       padding: 0.8rem 1.25rem;
       text-decoration: none;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
     }
 
     .portals a:hover {
       background: #1e40af;
+      box-shadow: 0 6px 12px rgba(15, 23, 42, 0.2);
+      transform: translateY(-2px) scale(1.02);
+    }
+
+    .portals a:active {
+      transform: translateY(0) scale(.98);
+      box-shadow: none;
     }
 
     .portals a:last-child {

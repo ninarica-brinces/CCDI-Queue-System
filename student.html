@@ -797,9 +797,7 @@
 
         <select id="studCourse" class="form-control">
 
-          <option value="">
-            Select Course
-          </option>
+          <option value=""></option>
 
           <option value="BS Computer Science">
             BS Computer Science
@@ -830,9 +828,7 @@
 
         <select id="studYear" class="form-control">
 
-          <option value="">
-            Select Year
-          </option>
+          <option value=""></option>
 
           <option value="1st Year">
             1st Year
@@ -1791,6 +1787,63 @@
 
    
 
+      function getProfileFieldValue(value) {
+        if (typeof value !== 'string' && typeof value !== 'number') return '';
+        const normalized = String(value).trim();
+        return /^(null|undefined)$/i.test(normalized) ? '' : normalized;
+      }
+
+      function setStudentProfileFields(profile) {
+        document.getElementById('studIdDisplay').value =
+          getProfileFieldValue(profile.student_id);
+        document.getElementById('studName').value =
+          getProfileFieldValue(profile.full_name);
+        document.getElementById('studAddress').value =
+          getProfileFieldValue(profile.address);
+
+        const courseSelect = document.getElementById('studCourse');
+        const yearSelect = document.getElementById('studYear');
+        [courseSelect, yearSelect].forEach(select => {
+          Array.from(select.options).forEach(option => {
+            if (
+              /^(null|undefined)$/i.test(option.value.trim()) ||
+              /^(null|undefined|select (course|year))$/i.test(option.text.trim())
+            ) {
+              option.remove();
+            }
+          });
+          if (!Array.from(select.options).some(option => option.value === '')) {
+            select.insertBefore(new Option('', ''), select.firstChild);
+          }
+          select.value = '';
+        });
+
+        const courseAliases = {
+          BSIT: 'BS Information Technology',
+          BSCS: 'BS Computer Science'
+        };
+        const rawCourse = getProfileFieldValue(profile.course);
+        const courseValue = courseAliases[rawCourse.toUpperCase()] || rawCourse;
+        if (courseValue) {
+          if (!Array.from(courseSelect.options).some(option => option.value === courseValue)) {
+            courseSelect.add(new Option(courseValue, courseValue));
+          }
+          courseSelect.value = courseValue;
+        }
+
+        const rawYear = getProfileFieldValue(profile.year_level);
+        const yearMatch = rawYear.match(/^([1-4])(?:st|nd|rd|th)?(?:\s*year)?$/i);
+        const yearValue = yearMatch
+          ? `${yearMatch[1]}${['st', 'nd', 'rd', 'th'][Number(yearMatch[1]) - 1]} Year`
+          : rawYear;
+        if (yearValue) {
+          if (!Array.from(yearSelect.options).some(option => option.value === yearValue)) {
+            yearSelect.add(new Option(yearValue, yearValue));
+          }
+          yearSelect.value = yearValue;
+        }
+      }
+
       updateJoinButtonState();       async function loginStudent() {
 
       const idInput =
@@ -1859,23 +1912,7 @@
 
       activeStudentId = profile.student_id;
 
-      document.getElementById(
-        'studIdDisplay'
-      ).value = profile.student_id;
-      document.getElementById('studName').value = profile.full_name;
-      document.getElementById('studAddress').value = profile.address;
-      const courseAliases = { BSIT: 'BS Information Technology', BSCS: 'BS Computer Science' };
-      const courseSelect = document.getElementById('studCourse');
-      const courseValue = courseAliases[profile.course] || profile.course;
-      if (![...courseSelect.options].some(option => option.value === courseValue)) {
-        courseSelect.add(new Option(courseValue, courseValue));
-      }
-      courseSelect.value = courseValue;
-      const yearSelect = document.getElementById('studYear');
-      const yearValue = `${profile.year_level}${['st', 'nd', 'rd'][profile.year_level - 1] || 'th'} Year`;
-      if ([...yearSelect.options].some(option => option.value === yearValue)) {
-        yearSelect.value = yearValue;
-      }
+      setStudentProfileFields(profile);
 
 
       closeModal(
@@ -2095,21 +2132,7 @@
         csrfToken = result.csrf_token;
         const profile = result.student;
         activeStudentId = profile.student_id;
-        document.getElementById('studIdDisplay').value = profile.student_id;
-        document.getElementById('studName').value = profile.full_name;
-        document.getElementById('studAddress').value = profile.address;
-        const aliases = { BSIT: 'BS Information Technology', BSCS: 'BS Computer Science' };
-        const courseSelect = document.getElementById('studCourse');
-        const courseValue = aliases[profile.course] || profile.course;
-        if (![...courseSelect.options].some(option => option.value === courseValue)) {
-          courseSelect.add(new Option(courseValue, courseValue));
-        }
-        courseSelect.value = courseValue;
-        const yearValue = `${profile.year_level}${['st', 'nd', 'rd'][profile.year_level - 1] || 'th'} Year`;
-        const yearSelect = document.getElementById('studYear');
-        if ([...yearSelect.options].some(option => option.value === yearValue)) {
-          yearSelect.value = yearValue;
-        }
+        setStudentProfileFields(profile);
         switchView('studentView');
         await refreshQueueState();
         startQueuePolling();

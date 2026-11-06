@@ -543,6 +543,55 @@ $conn = null;
     if ($method === 'GET' && $action === 'get_cashier_payment_activity_records') {
         requireRole('cashier');
 
+        $historyTableQuery = prepareQuery($conn, "SELECT to_regclass('public.payment_histories') IS NOT NULL");
+        $hasHistoryTable = (bool) $historyTableQuery->fetchColumn();
+        $recordsSourceSql = 'public.payment_histories';
+        if ($hasHistoryTable) {
+            $historyColumnsQuery = prepareQuery($conn,
+                "SELECT column_name
+                 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'payment_histories'"
+            );
+            $historyColumns = array_column($historyColumnsQuery->fetchAll(), 'column_name');
+            $requiredHistoryColumns = [
+                'transaction_ref', 'student_id', 'student_name', 'course_year',
+                'payment_type', 'created_at', 'cashier_staff', 'status',
+            ];
+            $hasHistoryColumns = count(array_diff($requiredHistoryColumns, $historyColumns)) === 0;
+        } else {
+            $hasHistoryColumns = false;
+        }
+
+        if (!$hasHistoryColumns) {
+            $legacyTableQuery = prepareQuery($conn, "SELECT to_regclass('public.payment_activity_records') IS NOT NULL");
+            if (!(bool) $legacyTableQuery->fetchColumn()) {
+                respond(503, [
+                    'success' => false,
+                    'message' => 'Payment activity records are not configured. Apply the payment activity migration and try again.',
+                ]);
+            }
+            $recordsSourceSql = "(
+                SELECT reference_number::text AS transaction_ref,
+                       student_id::text AS student_id,
+                       student_name::text AS student_name,
+                       concat_ws(' / ', NULLIF(course::text, ''), NULLIF(year_level::text, '')) AS course_year,
+                       payment_description::text AS payment_type,
+                       created_at,
+                       cashier_staff::text AS cashier_staff,
+                       COALESCE(NULLIF(status::text, ''), 'recorded') AS status
+                FROM public.payment_activity_records
+            ) AS payment_histories";
+        }
+
+        $statusOptionsQuery = prepareQuery($conn,
+            "SELECT DISTINCT lower(trim(payment_histories.status)) AS status
+             FROM $recordsSourceSql
+             WHERE NULLIF(trim(payment_histories.status), '') IS NOT NULL
+             ORDER BY status"
+        );
+        executeQuery($statusOptionsQuery);
+        $availableStatuses = array_column($statusOptionsQuery->fetchAll(), 'status');
+
         $range = $_GET['range'] ?? 'all';
         if (!is_string($range)) {
             respond(400, ['success' => false, 'message' => 'Invalid payment activity date range']);
@@ -556,7 +605,7 @@ $conn = null;
             respond(400, ['success' => false, 'message' => 'Invalid payment activity status']);
         }
         $status = strtolower(trim($statusInput));
-        if (!in_array($status, ['all', 'recorded'], true)) {
+        if (strlen($status) > 32 || ($status !== 'all' && !in_array($status, $availableStatuses, true))) {
             respond(400, ['success' => false, 'message' => 'Invalid payment activity status']);
         }
 
@@ -582,9 +631,9 @@ $conn = null;
         $where = [];
         $parameters = [];
         if ($search !== '') {
-            $where[] = "(transaction_ref ILIKE ? OR student_id ILIKE ? OR student_name ILIKE ?
-                         OR COALESCE(course_year, '') ILIKE ? OR payment_type ILIKE ?
-                         OR cashier_staff ILIKE ?)";
+            $where[] = "(payment_histories.transaction_ref ILIKE ? OR payment_histories.student_id ILIKE ?
+                         OR payment_histories.student_name ILIKE ? OR COALESCE(payment_histories.course_year, '') ILIKE ?
+                         OR payment_histories.payment_type ILIKE ? OR payment_histories.cashier_staff ILIKE ?)";
             $searchPattern = '%' . $search . '%';
             array_push(
                 $parameters,
@@ -597,17 +646,17 @@ $conn = null;
             );
         }
         if ($status !== 'all') {
-            $where[] = 'status = ?';
+            $where[] = 'lower(trim(payment_histories.status)) = ?';
             $parameters[] = $status;
         }
         if ($startDate !== null) {
-            $where[] = 'created_at >= ? AND created_at < ?';
+            $where[] = 'payment_histories.created_at >= ? AND payment_histories.created_at < ?';
             $parameters[] = $startDate->format('Y-m-d\TH:i:sP');
             $parameters[] = $endOfDay;
         }
         $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
 
-        $countQuery = prepareQuery($conn, 'SELECT COUNT(*) FROM public.payment_histories' . $whereSql);
+        $countQuery = prepareQuery($conn, 'SELECT COUNT(*) FROM ' . $recordsSourceSql . $whereSql);
         executeQuery($countQuery, $parameters);
         $filteredCount = (int) $countQuery->fetchColumn();
 
@@ -618,10 +667,12 @@ $conn = null;
         }
         $page = min($page, max(1, (int) ceil($filteredCount / $pageSize)));
         $recordQuery = prepareQuery($conn,
-            'SELECT transaction_ref, student_id, student_name, course_year,
-                    payment_type, created_at, cashier_staff, status
-             FROM public.payment_histories' . $whereSql .
-            ' ORDER BY created_at DESC, transaction_ref DESC' .
+            'SELECT payment_histories.transaction_ref, payment_histories.student_id,
+                    payment_histories.student_name, payment_histories.course_year,
+                    payment_histories.payment_type, payment_histories.created_at,
+                    payment_histories.cashier_staff, payment_histories.status
+             FROM ' . $recordsSourceSql . $whereSql .
+            ' ORDER BY payment_histories.created_at DESC, payment_histories.transaction_ref DESC' .
             ' LIMIT ' . $pageSize . ' OFFSET ' . (($page - 1) * $pageSize)
         );
         executeQuery($recordQuery, $parameters);
@@ -629,8 +680,8 @@ $conn = null;
 
         $metricsQuery = prepareQuery($conn,
             "SELECT COUNT(*) AS total_records,
-                    COUNT(*) FILTER (WHERE created_at >= ? AND created_at < ?) AS today_records
-             FROM public.payment_histories"
+                    COUNT(*) FILTER (WHERE payment_histories.created_at >= ? AND payment_histories.created_at < ?) AS today_records
+             FROM $recordsSourceSql"
         );
         executeQuery($metricsQuery, [
             $localToday->format('Y-m-d\TH:i:sP'),
@@ -645,11 +696,11 @@ $conn = null;
         executeQuery($queueCountQuery, [$today]);
 
         $activityQuery = prepareQuery($conn,
-            "SELECT (created_at AT TIME ZONE ?)::date AS activity_date,
+            "SELECT (payment_histories.created_at AT TIME ZONE ?)::date AS activity_date,
                     COUNT(*) AS records
-             FROM public.payment_histories
-             WHERE created_at >= ? AND created_at < ?
-             GROUP BY (created_at AT TIME ZONE ?)::date
+             FROM $recordsSourceSql
+             WHERE payment_histories.created_at >= ? AND payment_histories.created_at < ?
+             GROUP BY (payment_histories.created_at AT TIME ZONE ?)::date
              ORDER BY activity_date"
         );
         executeQuery($activityQuery, [
@@ -685,6 +736,7 @@ $conn = null;
                 'today_records' => (int) $metrics['today_records'],
                 'active_queue_count' => (int) $queueCountQuery->fetchColumn(),
             ],
+            'statuses' => $availableStatuses,
             'activity' => $activity,
         ]);
     }

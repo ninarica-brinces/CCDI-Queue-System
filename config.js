@@ -2,7 +2,7 @@ export const APP_CONFIG = {
   apiUrl: './api.php', // API is served with the app locally and on Render.
   lanes: [
     { id: 'Regular', label: 'Regular Lane', prefix: 'A' },
-    { id: 'Priority', label: 'Priority Lane (PWD / Senior / Parents)', prefix: 'P' }
+    { id: 'Priority', label: 'Priority Lane (PWD)', prefix: 'P' }
   ],
   services: [
     { id: 'tuition', label: 'Tuition Payment' },

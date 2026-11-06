@@ -29,6 +29,10 @@
       min-height: 0;
     }
 
+    .cashier-page.auth-locked .cashier-layout {
+      visibility: hidden;
+    }
+
     body.cashier-page > header {
       background-color: #1d4ed8;
       color: white;
@@ -420,7 +424,6 @@
             <label class="payment-filter-label" for="txFilterStatus">Status</label>
             <select id="txFilterStatus" class="filter-select" aria-label="Filter by payment status">
               <option value="all">All statuses</option>
-              <option value="recorded">Recorded</option>
             </select>
           </div>
           <p id="paymentActivityRecordMessage" class="payment-activity-record-message" role="status" aria-live="polite"></p>

@@ -256,7 +256,7 @@ function renderPaymentActivityRecordRows(records) {
     const courseYear = record.course_year || '—';
     const createdAt = new Date(record.created_at);
     const formattedDate = Number.isNaN(createdAt.getTime())
-      ? record.created_at
+      ? record.created_at || '—'
       : createdAt.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
     const fields = [
       record.transaction_ref,
@@ -281,6 +281,21 @@ function renderPaymentActivityRecordRows(records) {
   });
 }
 
+function updatePaymentActivityStatusOptions(statuses) {
+  const selectedStatus = elements.txFilterStatus.value;
+  const options = [createSafeElement('option', '', 'All statuses')];
+  options[0].value = 'all';
+
+  statuses.forEach(status => {
+    const option = createSafeElement('option', '', status.charAt(0).toUpperCase() + status.slice(1));
+    option.value = status;
+    options.push(option);
+  });
+
+  elements.txFilterStatus.replaceChildren(...options);
+  elements.txFilterStatus.value = statuses.includes(selectedStatus) ? selectedStatus : 'all';
+}
+
 async function fetchPaymentActivityRecords() {
   const requestId = ++paymentActivityRecordRequestId;
   const params = new URLSearchParams({
@@ -303,6 +318,7 @@ async function fetchPaymentActivityRecords() {
     }
     if (requestId !== paymentActivityRecordRequestId) return;
 
+    updatePaymentActivityStatusOptions(result.statuses);
     elements.paymentActivityRecordTotalRecords.textContent =
       Number(result.metrics.total_records).toLocaleString('en-PH');
     elements.paymentActivityRecordTodayRecords.textContent =
@@ -323,11 +339,12 @@ async function fetchPaymentActivityRecords() {
   } catch (error) {
     if (requestId !== paymentActivityRecordRequestId) return;
     console.error('Failed to load payment activity records:', error);
-    elements.paymentActivityRecordMessage.textContent =
+    const errorMessage =
       getEnglishMessage(error.message, 'Unable to load payment activity records.');
+    elements.paymentActivityRecordMessage.textContent = errorMessage;
     renderPaymentActivityRecordRows([]);
-    elements.txTableBody.firstElementChild.firstElementChild.textContent =
-      'Payment Activity Record is unavailable. Check the database migration and try again.';
+    const errorCell = elements.txTableBody.querySelector('.empty-msg');
+    if (errorCell) errorCell.textContent = errorMessage;
   }
 }
 
@@ -659,10 +676,8 @@ async function restoreCashierSession() {
       await startCashierSession(result.csrf_token);
       return;
     }
-    document.body.classList.remove('auth-locked');
     elements.cashierLoginDialog.showModal();
   } catch (error) {
-    document.body.classList.remove('auth-locked');
     elements.cashierLoginMessage.textContent =
       getEnglishMessage(error.message, 'Unable to verify cashier session.');
     elements.cashierLoginDialog.showModal();

@@ -775,7 +775,7 @@ $conn = null;
                     COUNT(*) AS records
              FROM $recordsSourceSql
              WHERE payment_histories.created_at >= ? AND payment_histories.created_at < ?
-             GROUP BY (payment_histories.created_at AT TIME ZONE ?)::date
+             GROUP BY 1
              ORDER BY activity_date"
         );
         executeQuery($activityQuery, [

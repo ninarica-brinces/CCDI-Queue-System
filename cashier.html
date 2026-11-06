@@ -13,22 +13,22 @@
   <!-- SIDEBAR NAVIGATION -->
   <aside>
     <div>
-      <div class="brand">
+      <a class="brand" href="index.html" style="text-decoration: none;">
         <div class="brand-logo" aria-hidden="true">
           <i class="fa-solid fa-graduation-cap"></i>
         </div>
         <div class="brand-title">CCDI Cashier Recording<br>Queue System</div>
-      </div>
+      </a>
       <nav aria-label="Main Navigation">
         <ul class="nav-menu">
           <li class="nav-item">
-            <a href="#" id="navQueue" class="nav-link active" aria-current="page"><i class="fa-solid fa-users-line"></i> Queue Management</a>
+            <a href="#pageQueue" id="navQueue" class="nav-link active" aria-current="page"><i class="fa-solid fa-users-line"></i> Queue Management</a>
           </li>
           <li class="nav-item">
-            <a href="#" id="navPaymentActivityRecord" class="nav-link"><i class="fa-solid fa-receipt"></i> Payment Activity Record</a>
+            <a href="#pagePaymentActivityRecord" id="navPaymentActivityRecord" class="nav-link"><i class="fa-solid fa-receipt"></i> Payment Activity Record</a>
           </li>
           <li class="nav-item">
-            <a href="#" id="navReports" class="nav-link"><i class="fa-solid fa-chart-column"></i> Transaction Log</a>
+            <a href="#pageReports" id="navReports" class="nav-link"><i class="fa-solid fa-chart-column"></i> Transaction Log</a>
           </li>
         </ul>
       </nav>
@@ -332,7 +332,7 @@
         <h3>Issue New Queue Ticket</h3>
         <button id="closeModalCross" type="button" class="close-btn" aria-label="Close dialog">&times;</button>
       </header>
-      <form id="ticketForm">
+      <form id="ticketForm" action="cashier.html" method="post">
         <div class="form-group">
           <label for="laneType">Lane Type</label>
           <select id="laneType" name="laneType" required></select>
@@ -374,7 +374,7 @@
       <header class="modal-header">
         <h2>Cashier Sign In</h2>
       </header>
-      <form id="cashierLoginForm" class="login-form">
+      <form id="cashierLoginForm" class="login-form" action="cashier.html" method="post">
         <div class="form-group">
           <label for="cashierLoginUsername">Username</label>
           <input type="text" id="cashierLoginUsername" name="username" required maxlength="80"

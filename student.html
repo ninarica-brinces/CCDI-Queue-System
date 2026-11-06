@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CCDI School Queue System</title>
+  <title>CCDI Student Portal | Queue System</title>
 
   <style>
     :root {
@@ -54,6 +54,8 @@
       align-items: center;
       gap: 12px;
       cursor: pointer;
+      color: inherit;
+      text-decoration: none;
     }
 
     .logo-circle {
@@ -96,6 +98,7 @@
     .btn-nav {
       background: rgba(255, 255, 255, 0.15);
       color: white;
+      text-decoration: none;
       border: 1px solid rgba(255, 255, 255, 0.3);
       padding: 0.45rem 0.9rem;
       border-radius: 6px;
@@ -652,7 +655,7 @@
   <!-- HEADER NAVBAR -->
 
   <header>
-    <div class="brand" onclick="switchView('homeView')">
+    <a class="brand" href="index.html">
       <div class="logo-circle">
 
     <!-- High-definition, fully vector-traced CCDI Logo -->
@@ -700,62 +703,37 @@
 
   <div class="brand-text">
     <h1>CCDI Cashier Recording Queue System</h1>
-    <p id="portalSubHeader">Main Portal Selection</p>
+    <p id="portalSubHeader">Student Portal</p>
   </div>
-</div>
+</a>
 
 <div class="nav-actions">
-  <button class="btn-nav" onclick="switchView('homeView')">
+  <a class="btn-nav" href="index.html">
     🏠 Home
-  </button>
+  </a>
 </div>
 
   </header>
 
-  <!-- VIEW 1: HOME SELECTION -->
+  <!-- VIEW 1: STUDENT PORTAL ENTRY -->
 
   <main id="homeView" class="view-section active">
     <div class="hero-container">
 
-  <h1 class="hero-title">
-    Welcome to the CCDI Cashier Recording Queue System
-  </h1>
+  <h1 class="hero-title">Student Portal</h1>
 
   <p class="hero-subtitle">
-    Please select your portal to proceed with transaction queuing
+    Sign in to request cashier services, join the queue, and view queue status.
   </p>
 
   <div class="portal-grid">
-
-    <div class="portal-card" onclick="openStudentModal()">
+    <div class="portal-card" onclick="openStudentModal()" role="button" tabindex="0"
+      onkeydown="if (event.key === 'Enter' || event.key === ' ') openStudentModal()">
       <div class="portal-icon">👨‍🎓</div>
-
       <h2>Student Portal</h2>
-
-      <p>
-        Request cashier services, join the queue, and view real-time queue status.
-      </p>
-
-      <span class="btn-portal">
-        Enter Student Portal
-      </span>
+      <p>Continue to your student queue dashboard.</p>
+      <span class="btn-portal">Sign in</span>
     </div>
-
-
-    <div class="portal-card" onclick="openCashierModal()">
-      <div class="portal-icon">💳</div>
-
-      <h2>Cashier Portal</h2>
-
-      <p>
-        Staff terminal to call active tickets, process payments, and manage overall queue flow.
-      </p>
-
-      <span class="btn-portal" style="background-color: #64748b;">
-        Staff Access
-      </span>
-    </div>
-
   </div>
 </div>
 
@@ -1742,7 +1720,7 @@
       } else {
 
         subHeader.innerText =
-          "Main Portal Selection";
+          "Student Portal";
 
       }
 
@@ -2132,9 +2110,7 @@
         if ([...yearSelect.options].some(option => option.value === yearValue)) {
           yearSelect.value = yearValue;
         }
-        if (new URLSearchParams(window.location.search).get('portal') === 'student') {
-          switchView('studentView');
-        }
+        switchView('studentView');
         await refreshQueueState();
         startQueuePolling();
       } catch (error) {
@@ -3100,12 +3076,6 @@
 
 restoreStudentSession();
 
-  </script>
-
-  <script>
-    const requestedPortal = new URLSearchParams(window.location.search).get('portal');
-    if (requestedPortal === 'student') window.openStudentModal();
-    if (requestedPortal === 'cashier') window.openCashierModal();
   </script>
 
 </body>

@@ -688,3 +688,94 @@
             <table class="report-table">
               <thead>
                 <tr>
+                  <th>Payment Option</th>
+                  <th>Count</th>
+                  <th>Percentage</th>
+                </tr>
+              </thead>
+              <tbody id="rptPaymentsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer-bar">
+      <span>School Cashier Queue System | Enterprise Operations Mode</span>
+      <span id="storageStatus" class="storage-status" role="status">Connecting to PostgreSQL</span>
+      <button id="resetSystemBtn" type="button" class="btn-text-danger">Reset Operational Day</button>
+    </footer>
+  </main>
+  </div>
+
+  <dialog id="ticketDialog" class="modal">
+    <div class="modal-content">
+      <header class="modal-header">
+        <h3>Issue New Queue Ticket</h3>
+        <button id="closeModalCross" type="button" class="close-btn" aria-label="Close dialog">&times;</button>
+      </header>
+      <form id="ticketForm" action="cashier.html" method="post">
+        <div class="form-group">
+          <label for="laneType">Lane Type</label>
+          <select id="laneType" name="laneType" required></select>
+        </div>
+        <div class="form-group">
+          <label for="studentId">Student ID</label>
+          <input type="text" id="studentId" name="studentId" placeholder="Enter CCDI Student ID" maxlength="64" aria-required="true" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="studentName">Student Name</label>
+          <input type="text" id="studentName" name="studentName" placeholder="Enter full name" maxlength="120" aria-required="true" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="serviceType">Service Requested</label>
+          <select id="serviceType" name="serviceType" required></select>
+        </div>
+        <div id="tuitionPaymentFields">
+          <div class="form-group">
+            <label for="paymentType">Payment Option</label>
+            <select id="paymentType" name="paymentType"></select>
+          </div>
+          <div class="form-group">
+            <label for="paymentPeriod">Payment Period</label>
+            <select id="paymentPeriod" name="paymentPeriod"></select>
+          </div>
+        </div>
+        <footer class="modal-actions">
+          <button type="button" id="closeModalBtn" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Issue Ticket</button>
+        </footer>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="cashierLoginDialog" class="modal login-modal cashier-login-dialog">
+    <div class="hero-container cashier-login-container">
+      <div class="portal-grid cashier-login-grid">
+        <section class="portal-card cashier-login-card" aria-labelledby="cashierLoginTitle">
+          <img class="cashier-login-badge" src="assets/images/cashier-portal.png.jpg" alt="Cashier Portal badge">
+          <h2 id="cashierLoginTitle">Cashier Terminal Access</h2>
+          <p>Sign in to manage the queue and access cashier services.</p>
+          <form id="cashierLoginForm" class="login-form cashier-login-form" action="cashier.html" method="post">
+            <div class="form-group">
+              <label for="cashierLoginUsername">Username</label>
+              <input type="text" id="cashierLoginUsername" name="username" required maxlength="80" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="cashierLoginPassword">Password</label>
+              <input type="password" id="cashierLoginPassword" name="password" required maxlength="1024" autocomplete="off">
+            </div>
+            <p id="cashierLoginMessage" class="login-message" role="alert"></p>
+            <footer class="modal-actions cashier-login-actions">
+              <button type="submit" class="btn-submit">Sign In</button>
+              <button type="button" id="cashierLoginCancelBtn" class="cashier-login-cancel">Cancel</button>
+            </footer>
+          </form>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

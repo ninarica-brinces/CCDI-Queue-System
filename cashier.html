@@ -13,7 +13,9 @@
       flex-direction: column;
       height: 100vh;
       min-height: 100vh;
-      overflow: hidden;
+git add .
+git commit -m "Expose temporary SQL error for ticket status update debugging"
+git push origin main      overflow: hidden;
       background: var(--page-gradient);
       background-attachment: fixed;
     }
@@ -96,16 +98,15 @@
       text-align: center;
     }
 
-    .cashier-login-icon {
-      display: flex;
-      width: 64px;
-      height: 64px;
-      align-items: center;
-      justify-content: center;
+    .cashier-login-badge {
+      display: block;
+      width: min(90px, 24vw);
+      height: min(90px, 24vw);
+      object-fit: cover;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
       margin-bottom: 1.2rem;
-      background: #E5F1FB;
-      color: var(--primary);
-      font-size: 1.8rem;
     }
 
     .cashier-login-card h2 {
@@ -789,9 +790,7 @@
     <div class="hero-container cashier-login-container">
       <div class="portal-grid cashier-login-grid">
         <section class="portal-card cashier-login-card" aria-labelledby="cashierLoginTitle">
-          <div class="portal-icon cashier-login-icon" aria-hidden="true">
-            <svg class="ui-icon" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 21a7 7 0 0 1 14 0M3 5l9-3 9 3-9 3-9-3Z"/><path d="M6 6v4"/></svg>
-          </div>
+          <img class="cashier-login-badge" src="assets/images/cashier-portal.png.jpg" alt="Cashier Portal badge">
           <h2 id="cashierLoginTitle">Cashier Terminal Access</h2>
           <p>Sign in to manage the queue and access cashier services.</p>
           <form id="cashierLoginForm" class="login-form cashier-login-form" action="cashier.html" method="post">

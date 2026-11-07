@@ -200,6 +200,16 @@
       margin-bottom: 1.2rem;
     }
 
+    .portal-icon.portal-badge-image {
+      width: min(90px, 24vw);
+      height: min(90px, 24vw);
+      display: block;
+      object-fit: cover;
+      background: transparent;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    }
+
     .portal-card h2 {
       font-size: 1.3rem;
       margin-bottom: 0.5rem;
@@ -745,9 +755,7 @@
   <div class="portal-grid">
     <div class="portal-card" onclick="openStudentModal()" role="button" tabindex="0"
       onkeydown="if (event.key === 'Enter' || event.key === ' ') openStudentModal()">
-      <div class="portal-icon" aria-hidden="true">
-        <svg class="ui-icon" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 21a7 7 0 0 1 14 0M3 5l9-3 9 3-9 3-9-3Z"/><path d="M6 6v4"/></svg>
-      </div>
+      <img class="portal-icon portal-badge-image" src="assets/images/student-portal.png.jpg" alt="Student Portal badge">
       <h2>Student Portal</h2>
       <p>Continue to your student queue dashboard.</p>
       <span class="btn-portal">Sign in</span>

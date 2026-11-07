@@ -274,8 +274,7 @@ function renderPaymentActivityRecordRows(records) {
       ? rawCreatedAt || '—'
       : createdAt.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
     const paymentType = getValue('payment_type', 'payment_description', 'payment_method', 'transaction_type');
-    const amount = getValue('amount', 'amount_paid');
-    const paymentDisplay = [paymentType, amount ? `₱${amount}` : ''].filter(Boolean).join(' · ');
+    const paymentDisplay = paymentType;
     const fields = [
       getValue('transaction_ref', 'transaction_reference', 'reference_number'),
       getValue('student_id'),

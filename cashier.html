@@ -13,9 +13,7 @@
       flex-direction: column;
       height: 100vh;
       min-height: 100vh;
-git add .
-git commit -m "Expose temporary SQL error for ticket status update debugging"
-git push origin main      overflow: hidden;
+      overflow: hidden;
       background: var(--page-gradient);
       background-attachment: fixed;
     }
@@ -378,44 +376,26 @@ git push origin main      overflow: hidden;
   <header>
     <a class="brand" href="index.html">
       <div class="logo-circle">
-        <!-- High-definition, fully vector-traced CCDI Logo -->
         <svg viewBox="0 0 200 200" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <filter id="drop-shadow" x="-10%" y="-10%" width="120%" height="120%">
               <feDropShadow dx="1" dy="2" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.3"/>
             </filter>
-
             <linearGradient id="blue-grad" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stop-color="#2c3e80"/>
               <stop offset="100%" stop-color="#1d2a5c"/>
             </linearGradient>
-
             <linearGradient id="red-grad" x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stop-color="#ff2a2a"/>
               <stop offset="100%" stop-color="#b80000"/>
             </linearGradient>
           </defs>
-
           <g filter="url(#drop-shadow)">
-            <!-- Outer C Loop -->
-            <path d="M 92,20 A 75,75 0 1,0 92,170 L 92,142 A 47,47 0 1,1 92,48 Z"
-                  fill="url(#blue-grad)"/>
-
-            <!-- Inner C Arc -->
-            <path d="M 92,48 A 47,47 0 0,0 52,95 A 47,47 0 0,0 92,142 L 92,120 A 25,25 0 0,1 70,95 A 25,25 0 0,1 92,70 Z"
-                  fill="url(#blue-grad)"/>
-
-            <!-- D Right Loop -->
-            <path d="M 100,20 L 100,170 A 75,75 0 0,0 175,95 A 75,75 0 0,0 100,20 Z
-                     M 125,50 A 45,45 0 0,1 150,95 A 45,45 0 0,1 125,140 L 125,50 Z"
-                  fill="url(#blue-grad)"/>
-
-            <!-- Red i Dot -->
+            <path d="M 92,20 A 75,75 0 1,0 92,170 L 92,142 A 47,47 0 1,1 92,48 Z" fill="url(#blue-grad)"/>
+            <path d="M 92,48 A 47,47 0 0,0 52,95 A 47,47 0 0,0 92,142 L 92,120 A 25,25 0 0,1 70,95 A 25,25 0 0,1 92,70 Z" fill="url(#blue-grad)"/>
+            <path d="M 100,20 L 100,170 A 75,75 0 0,0 175,95 A 75,75 0 0,0 100,20 Z M 125,50 A 45,45 0 0,1 150,95 A 45,45 0 0,1 125,140 L 125,50 Z" fill="url(#blue-grad)"/>
             <circle cx="132" cy="74" r="13" fill="url(#red-grad)"/>
-
-            <!-- Red i Stem -->
-            <path d="M 122,96 L 142,96 L 142,168 Q 142,176 150,178 L 114,178 Q 122,176 122,168 Z"
-                  fill="url(#red-grad)"/>
+            <path d="M 122,96 L 142,96 L 142,168 Q 142,176 150,178 L 114,178 Q 122,176 122,168 Z" fill="url(#red-grad)"/>
           </g>
         </svg>
       </div>
@@ -433,7 +413,6 @@ git push origin main      overflow: hidden;
   </header>
 
   <div class="cashier-layout">
-  <!-- SIDEBAR NAVIGATION -->
   <aside>
     <div>
       <nav aria-label="Main Navigation">
@@ -450,7 +429,6 @@ git push origin main      overflow: hidden;
         </ul>
       </nav>
     </div>
-    
     <div class="sidebar-footer">
       <div><i class="fa-regular fa-calendar-days"></i> System Clock</div>
       <div id="liveClock" class="clock-display">--:--:--</div>
@@ -459,9 +437,7 @@ git push origin main      overflow: hidden;
     </div>
   </aside>
 
-  <!-- MAIN CONTENT -->
   <main>
-    <!-- PAGE 1: QUEUE MANAGEMENT -->
     <div id="pageQueue" class="page-view active">
       <header>
         <div class="header-left">
@@ -473,7 +449,6 @@ git push origin main      overflow: hidden;
       </header>
 
       <div class="container">
-        <!-- KPI METRICS GRID -->
         <section class="kpi-grid" aria-label="Queue Metrics">
           <div class="kpi-card">
             <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
@@ -483,7 +458,6 @@ git push origin main      overflow: hidden;
               <span class="sub"><span id="kpiRegWait">0</span> Regular | <span id="kpiPrioWait">0</span> Priority</span>
             </div>
           </div>
-
           <div class="kpi-card">
             <div class="kpi-icon"><i class="fa-solid fa-circle-check"></i></div>
             <div class="kpi-details">
@@ -492,7 +466,6 @@ git push origin main      overflow: hidden;
               <span class="sub" id="kpiServingLane">None</span>
             </div>
           </div>
-
           <div class="kpi-card">
             <div class="kpi-icon"><i class="fa-solid fa-receipt"></i></div>
             <div class="kpi-details">
@@ -501,7 +474,6 @@ git push origin main      overflow: hidden;
               <span class="sub">Tickets</span>
             </div>
           </div>
-
           <div class="kpi-card">
             <div class="kpi-icon"><i class="fa-solid fa-forward-step"></i></div>
             <div class="kpi-details">
@@ -509,9 +481,9 @@ git push origin main      overflow: hidden;
               <span class="value" id="kpiSkipped">0</span>
               <span class="sub">Tickets</span>
             </div>
-          </section>
+          </div>
+        </section>
 
-        <!-- REGULAR QUEUE SECTION -->
         <section class="queue-section">
           <div class="card">
             <div class="card-header">
@@ -526,7 +498,6 @@ git push origin main      overflow: hidden;
               <button id="btnRegComplete" type="button" class="btn btn-success"><i class="fa-solid fa-check"></i> Complete</button>
             </div>
           </div>
-
           <div class="card">
             <div class="card-header">
               <h2 class="card-title">Regular Queue List</h2>
@@ -547,7 +518,6 @@ git push origin main      overflow: hidden;
           </div>
         </section>
 
-        <!-- PRIORITY QUEUE SECTION -->
         <section class="queue-section">
           <div class="card">
             <div class="card-header">
@@ -562,7 +532,6 @@ git push origin main      overflow: hidden;
               <button id="btnPrioComplete" type="button" class="btn btn-success"><i class="fa-solid fa-check"></i> Complete</button>
             </div>
           </div>
-
           <div class="card">
             <div class="card-header">
               <h2 class="card-title">Priority Queue List</h2>
@@ -585,7 +554,6 @@ git push origin main      overflow: hidden;
       </div>
     </div>
 
-    <!-- PAGE 2: PAYMENT ACTIVITY RECORD -->
     <div id="pagePaymentActivityRecord" class="page-view">
       <header>
         <div class="header-left">
@@ -675,7 +643,6 @@ git push origin main      overflow: hidden;
       </div>
     </div>
 
-    <!-- PAGE 3: TRANSACTION LOG -->
     <div id="pageReports" class="page-view">
       <header>
         <div class="header-left">
@@ -714,7 +681,6 @@ git push origin main      overflow: hidden;
               <tbody id="rptServicesBody"></tbody>
             </table>
           </div>
-
           <div class="card" id="paymentSummary" hidden>
             <div class="card-header">
               <h2 class="card-title">Tuition Payment Option Distribution</h2>
@@ -722,100 +688,3 @@ git push origin main      overflow: hidden;
             <table class="report-table">
               <thead>
                 <tr>
-                  <th>Payment Option</th>
-                  <th>Count</th>
-                  <th>Percentage</th>
-                </tr>
-              </thead>
-              <tbody id="rptPaymentsBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <footer class="footer-bar">
-      <span>School Cashier Queue System | Enterprise Operations Mode</span>
-      <span id="storageStatus" class="storage-status" role="status">Connecting to PostgreSQL</span>
-      <button id="resetSystemBtn" type="button" class="btn-text-danger">Reset Operational Day</button>
-    </footer>
-  </main>
-  </div>
-
-  <!-- Accessible ticket dialog with student authorization lookup -->
-  <dialog id="ticketDialog" class="modal">
-    <div class="modal-content">
-      <header class="modal-header">
-        <h3>Issue New Queue Ticket</h3>
-        <button id="closeModalCross" type="button" class="close-btn" aria-label="Close dialog">&times;</button>
-      </header>
-      <form id="ticketForm" action="cashier.html" method="post">
-        <div class="form-group">
-          <label for="laneType">Lane Type</label>
-          <select id="laneType" name="laneType" required></select>
-        </div>
-        <div class="form-group">
-          <label for="studentId">Student ID</label>
-          <input type="text" id="studentId" name="studentId" placeholder="Enter CCDI Student ID" maxlength="64" aria-required="true"
-            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-        </div>
-        <div class="form-group">
-          <label for="studentName">Student Name</label>
-          <input type="text" id="studentName" name="studentName" placeholder="Enter full name" maxlength="120" aria-required="true"
-            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-        </div>
-        <div class="form-group">
-          <label for="serviceType">Service Requested</label>
-          <select id="serviceType" name="serviceType" required></select>
-        </div>
-        <div id="tuitionPaymentFields">
-          <div class="form-group">
-            <label for="paymentType">Payment Option</label>
-            <select id="paymentType" name="paymentType"></select>
-          </div>
-          <div class="form-group">
-            <label for="paymentPeriod">Payment Period</label>
-            <select id="paymentPeriod" name="paymentPeriod"></select>
-          </div>
-        </div>
-        <footer class="modal-actions">
-          <button type="button" id="closeModalBtn" class="btn btn-secondary">Cancel</button>
-          <button type="submit" class="btn btn-primary">Issue Ticket</button>
-        </footer>
-      </form>
-    </div>
-  </dialog>
-
-  <dialog id="cashierLoginDialog" class="modal login-modal cashier-login-dialog">
-    <div class="hero-container cashier-login-container">
-      <div class="portal-grid cashier-login-grid">
-        <section class="portal-card cashier-login-card" aria-labelledby="cashierLoginTitle">
-          <img class="cashier-login-badge" src="assets/images/cashier-portal.png.jpg" alt="Cashier Portal badge">
-          <h2 id="cashierLoginTitle">Cashier Terminal Access</h2>
-          <p>Sign in to manage the queue and access cashier services.</p>
-          <form id="cashierLoginForm" class="login-form cashier-login-form" action="cashier.html" method="post">
-            <div class="form-group">
-              <label for="cashierLoginUsername">Username</label>
-              <input type="text" id="cashierLoginUsername" name="username" required maxlength="80"
-                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-            </div>
-            <div class="form-group">
-              <label for="cashierLoginPassword">Password</label>
-              <input type="password" id="cashierLoginPassword" name="password" required maxlength="1024"
-                autocomplete="off">
-            </div>
-            <p id="cashierLoginMessage" class="login-message" role="alert"></p>
-            <footer class="modal-actions cashier-login-actions">
-              <button type="submit" class="btn-submit">Sign In</button>
-              <button type="button" id="cashierLoginCancelBtn" class="cashier-login-cancel">Cancel</button>
-            </footer>
-          </form>
-        </section>
-      </div>
-    </div>
-  </dialog>
-
-  <!-- MAIN APP SCRIPT -->
-  <script type="module" src="app.js"></script>
-</body>
-</html>

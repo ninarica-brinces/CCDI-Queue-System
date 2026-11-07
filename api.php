@@ -622,13 +622,15 @@ try {
             $courseAndYear = "NULLIF(concat_ws(' / ', " .
                 $jsonValue(['course']) . ', ' . $jsonValue(['year_level']) . "), '')";
             $createdAt = $jsonValue(['created_at', 'date_time']);
+            
+            // Inalis at nilinis ang amount/peso sign para sakto sa delimitations
             $sourceQuery = "SELECT
                     {$jsonValue(['transaction_ref', 'transaction_reference', 'reference_number'])} AS transaction_ref,
                     {$jsonValue(['student_id'])} AS student_id,
                     {$jsonValue(['student_name'])} AS student_name,
                     COALESCE($courseYear, $courseAndYear) AS course_year,
-                    {$jsonValue(['payment_type', 'payment_description', 'payment_method', 'transaction_type'])} AS payment_type,
-                    {$jsonValue(['amount', 'amount_paid'])} AS amount,
+                    REGEXP_REPLACE({$jsonValue(['payment_type', 'payment_description', 'payment_method', 'transaction_type'])}, '\s*[·\-–]\s*₱?\s*[\d,.]+', '', 'g') AS payment_type,
+                    0.00 AS amount,
                     $createdAt::timestamptz AS created_at,
                     {$jsonValue(['cashier_staff'])} AS cashier_staff,
                     COALESCE({$jsonValue(['status'])}, 'recorded') AS status
